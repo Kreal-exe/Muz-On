@@ -38,6 +38,9 @@ object OnlineArt {
             Outcome.Unavailable
         } catch (e: org.json.JSONException) {
             Outcome.Unavailable
+        } catch (e: RuntimeException) {
+            Log.w("OnlineArt", "Lookup failed", e)
+            Outcome.Unavailable
         }
     }
 

@@ -79,6 +79,7 @@
     <string name="s_online_art_hint">Wysyła wykonawcę i tytuł utworów bez obrazu do Deezer i iTunes</string>
     <string name="s_lyrics_lead">Pokazuj wiersz wcześniej</string>
     <string name="seconds_short">%1$.2f s</string>
+    <string name="up_next">Następne</string>
     <string name="s_about">O aplikacji</string>
     <string name="s_privacy">Prywatność</string>
     <plurals name="songs">

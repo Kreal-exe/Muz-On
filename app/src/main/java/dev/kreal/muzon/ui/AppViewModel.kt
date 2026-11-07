@@ -24,6 +24,13 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         get() = sheetState.floatValue
         set(v) { sheetState.floatValue = v }
 
+    private val queueFullState = mutableFloatStateOf(0f)
+
+    /** 0 is the queue under the controls, 1 the queue over the whole player. */
+    var queueFull: Float
+        get() = queueFullState.floatValue
+        set(v) { queueFullState.floatValue = v }
+
     var isWide by mutableStateOf(false)
     var lyricsOpen by mutableStateOf(true)
 

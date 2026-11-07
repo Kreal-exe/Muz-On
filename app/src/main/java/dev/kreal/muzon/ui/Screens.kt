@@ -3,7 +3,8 @@ package dev.kreal.muzon.ui
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
+import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -33,7 +34,10 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowLeft
+import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.Check
+import androidx.compose.material.icons.rounded.OpenInFull
+import androidx.compose.material.icons.rounded.Remove
 import androidx.compose.material.icons.rounded.DragHandle
 import androidx.compose.material.icons.rounded.KeyboardArrowDown
 import androidx.compose.material.icons.rounded.PlayArrow
@@ -63,7 +67,10 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.unit.toSize
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
@@ -80,6 +87,7 @@ import dev.kreal.muzon.data.Place
 import dev.kreal.muzon.data.Playlist
 import dev.kreal.muzon.data.PlaylistSort
 import dev.kreal.muzon.data.Sorting
+import dev.kreal.muzon.data.TileSize
 import dev.kreal.muzon.data.Track
 
 /** Space the shell keeps at the bottom of every list: tabs and mini player, or just the system bar. */
@@ -156,17 +164,19 @@ private fun AppViewModel.openPlace(place: Place) {
 private fun HomeScreen(vm: AppViewModel, library: Library) {
     val p = LocalPalette.current
     var editing by rememberSaveable { mutableStateOf(false) }
+    var moving by remember { mutableStateOf(false) }
     val theme = LocalAppTheme.current
     val places = vm.prefs.places
     LazyVerticalGrid(
         columns = GridCells.Adaptive(100.dp),
         modifier = Modifier.fillMaxSize(),
+        userScrollEnabled = !moving, // a tile under the finger must not drag the page with it
         contentPadding = PaddingValues(start = 10.dp, end = 10.dp, top = statusTop() + 6.dp, bottom = LocalBottomSpace.current + 10.dp),
         horizontalArrangement = Arrangement.spacedBy(8.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         item(key = "places", span = { GridItemSpan(maxLineSpan) }, contentType = "places") {
-            if (editing) PlacesEditor(vm) else PlaceTiles(vm, library, places, theme)
+            PlaceTiles(vm, library, places, theme, editing, { moving = it }) { editing = true }
         }
         if (library.source != LibrarySource.MusicDatabase && vm.prefs.treeUri != null) {
             item(key = "noDb", span = { GridItemSpan(maxLineSpan) }, contentType = "noDb") { NoLibraryCard(vm) }
@@ -209,122 +219,200 @@ private fun HomeScreen(vm: AppViewModel, library: Library) {
     }
 }
 
+/**
+ * Half-width tiles pair up; a wider one takes its own row. In edit mode the tiles are moved with the
+ * finger, resized by the handle in their corner (sideways for width, down for height) and hidden with
+ * the badge; hidden places wait below to be added back. A long press opens edit mode.
+ */
 @Composable
-private fun PlaceTiles(vm: AppViewModel, library: Library, places: List<Place>, theme: AppTheme) {
-    if (places.isEmpty()) return
-    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        places.firstOrNull()?.let { first ->
-            val color = Blocks.forPlace(first)
-            val on = Blocks.on(color)
-            Row(
-                Modifier
-                    .fillMaxWidth()
-                    .height(92.dp)
-                    .block(color, theme, 18.dp)
-                    .clickable { vm.openPlace(first) }
-                    .padding(14.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Column(Modifier.weight(1f)) {
-                    Txt(first.label(), Type.section.copy(fontSize = androidx.compose.ui.unit.TextUnit(19f, androidx.compose.ui.unit.TextUnitType.Sp)), on)
-                    Txt(library.count(first).toString(), Type.small, on)
+private fun PlaceTiles(vm: AppViewModel, library: Library, places: List<Place>, theme: AppTheme, editing: Boolean, onMoving: (Boolean) -> Unit, onEdit: () -> Unit) {
+    val p = LocalPalette.current
+    val sizes = places.map { vm.prefs.tileSize(it) }
+    val rows = remember(places, sizes) {
+        val out = ArrayList<List<Place>>()
+        var half = ArrayList<Place>()
+        for (place in places) {
+            if (vm.prefs.tileSize(place) == TileSize.Half) {
+                half.add(place)
+                if (half.size == 2) {
+                    out += half
+                    half = ArrayList()
                 }
-                if (first == Place.Playlists && library.playlists.isNotEmpty()) {
-                    Mosaic(library.tracksOf(library.playlists.first()), Modifier.size(64.dp))
-                } else {
-                    Glyph(first.glyph(), 44.dp, on)
-                }
+            } else {
+                out += listOf(place)
             }
         }
-        places.drop(1).chunked(2).forEach { row ->
+        if (half.isNotEmpty()) out += half
+        out
+    }
+    val bounds = remember { androidx.compose.runtime.mutableStateMapOf<Place, androidx.compose.ui.geometry.Rect>() }
+    var dragging by remember { mutableStateOf<Place?>(null) }
+    // Where the finger holds the dragged tile, as its top-left corner in the column.
+    val dragTopLeft = remember { mutableStateOf(Offset.Zero) }
+    var origin by remember { mutableStateOf<androidx.compose.ui.layout.LayoutCoordinates?>(null) }
+    Column(
+        Modifier.onGloballyPositioned { origin = it },
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        rows.forEach { row ->
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 row.forEach { place ->
-                    val color = Blocks.forPlace(place)
-                    val on = Blocks.on(color)
-                    Row(
-                        Modifier
-                            .weight(1f)
-                            .height(70.dp)
-                            .block(color, theme, 16.dp)
-                            .clickable { vm.openPlace(place) }
-                            .padding(horizontal = 12.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Column(Modifier.weight(1f)) {
-                            Txt(place.label(), Type.tile, on)
-                            Txt(library.count(place).toString(), Type.small, on)
+                    val tileModifier = Modifier
+                        .weight(1f)
+                        .zIndex(if (dragging == place) 1f else 0f)
+                        .onGloballyPositioned { c ->
+                            val o = origin ?: return@onGloballyPositioned
+                            bounds[place] = androidx.compose.ui.geometry.Rect(o.localPositionOf(c, Offset.Zero), c.size.toSize())
                         }
-                        Glyph(place.glyph(), 30.dp, on)
+                        .graphicsLayer {
+                            if (dragging == place) {
+                                val at = bounds[place]?.topLeft ?: Offset.Zero
+                                translationX = dragTopLeft.value.x - at.x
+                                translationY = dragTopLeft.value.y - at.y
+                                scaleX = 1.04f
+                                scaleY = 1.04f
+                            }
+                        }
+                        .then(
+                            if (!editing) Modifier else Modifier.pointerInput(place) {
+                                detectDragGestures(
+                                    onDragStart = {
+                                        onMoving(true)
+                                        dragging = place
+                                        dragTopLeft.value = bounds[place]?.topLeft ?: Offset.Zero
+                                    },
+                                    onDragEnd = { dragging = null; onMoving(false) },
+                                    onDragCancel = { dragging = null; onMoving(false) },
+                                    onDrag = { change, amount ->
+                                        change.consume()
+                                        dragTopLeft.value += amount
+                                        val size = bounds[place]?.size ?: return@detectDragGestures
+                                        val center = dragTopLeft.value + Offset(size.width / 2, size.height / 2)
+                                        val over = bounds.entries.firstOrNull { it.key != place && it.value.contains(center) }?.key
+                                        if (over != null) {
+                                            val list = vm.prefs.places.toMutableList()
+                                            val from = list.indexOf(place)
+                                            val to = list.indexOf(over)
+                                            if (from >= 0 && to >= 0) {
+                                                list.add(to, list.removeAt(from))
+                                                vm.prefs.updatePlaces(list)
+                                            }
+                                        }
+                                    },
+                                )
+                            },
+                        )
+                    PlaceTile(vm, library, place, theme, editing, tileModifier, onMoving, onEdit)
+                }
+                if (row.size == 1 && vm.prefs.tileSize(row[0]) == TileSize.Half) Spacer(Modifier.weight(1f))
+            }
+        }
+        if (editing) {
+            val hidden = Place.entries.filter { it !in places }
+            if (hidden.isNotEmpty()) {
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
+                    hidden.forEach { place ->
+                        Row(
+                            Modifier.clip(RoundedCornerShape(16.dp)).background(p.surfaceHigh)
+                                .clickable { vm.prefs.updatePlaces(vm.prefs.places + place) }
+                                .padding(horizontal = 10.dp, vertical = 6.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Icon(Icons.Rounded.Add, null, tint = Blocks.forPlace(place), modifier = Modifier.size(16.dp))
+                            Spacer(Modifier.width(3.dp))
+                            Txt(place.label(), Type.small, p.text)
+                        }
                     }
                 }
-                if (row.size == 1) Spacer(Modifier.weight(1f))
             }
         }
     }
 }
 
-/** Shown places first, in order, each draggable by its handle; hidden ones below. */
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun PlacesEditor(vm: AppViewModel) {
-    val p = LocalPalette.current
-    val shown = vm.prefs.places
-    val hidden = Place.entries.filter { it !in shown }
-    val density = LocalDensity.current
-    val rowPx = with(density) { 48.dp.toPx() }
-    var dragging by remember { mutableStateOf<Place?>(null) }
-    val dragOffset = remember { mutableFloatStateOf(0f) }
-    Column(Modifier.clip(Radius16).background(p.surface).padding(horizontal = 12.dp)) {
-        shown.forEach { place ->
-            val isDragged = dragging == place
-            Row(
-                Modifier
-                    .fillMaxWidth()
-                    .height(48.dp)
-                    .zIndex(if (isDragged) 1f else 0f)
-                    .graphicsLayer { translationY = if (dragging == place) dragOffset.floatValue else 0f }
-                    .background(p.surface),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Box(Modifier.size(14.dp).clip(CircleShape).background(Blocks.forPlace(place)))
-                Spacer(Modifier.width(12.dp))
-                Txt(place.label(), Type.bodyBold, modifier = Modifier.weight(1f))
-                IconTap(Icons.Rounded.Visibility, p.muted, 20.dp, 40.dp) {
-                    if (shown.size > 1) vm.prefs.updatePlaces(shown - place)
-                }
-                Box(
-                    Modifier.size(40.dp).pointerInput(place) {
-                        detectDragGesturesAfterLongPress(
-                            onDragStart = { dragging = place; dragOffset.floatValue = 0f },
-                            onDragEnd = { dragging = null; dragOffset.floatValue = 0f },
-                            onDragCancel = { dragging = null; dragOffset.floatValue = 0f },
-                            onDrag = { change, amount ->
-                                change.consume()
-                                dragOffset.floatValue += amount.y
-                                val current = vm.prefs.places
-                                val index = current.indexOf(place)
-                                val move = (dragOffset.floatValue / rowPx).toInt()
-                                if (move != 0) {
-                                    val target = (index + move).coerceIn(0, current.lastIndex)
-                                    if (target != index) {
-                                        vm.prefs.updatePlaces(current.toMutableList().apply { add(target, removeAt(index)) })
-                                        dragOffset.floatValue -= (target - index) * rowPx
-                                    }
-                                }
-                            },
-                        )
-                    },
-                    contentAlignment = Alignment.Center,
-                ) { Icon(Icons.Rounded.DragHandle, null, tint = p.muted) }
+private fun PlaceTile(vm: AppViewModel, library: Library, place: Place, theme: AppTheme, editing: Boolean, modifier: Modifier, onMoving: (Boolean) -> Unit, onEdit: () -> Unit) {
+    val color = Blocks.forPlace(place)
+    val on = Blocks.on(color)
+    val size = vm.prefs.tileSize(place)
+    val haptic = androidx.compose.ui.platform.LocalHapticFeedback.current
+    Box(modifier.height(if (size == TileSize.Large) 112.dp else 70.dp)) {
+        Row(
+            Modifier
+                .fillMaxSize()
+                .block(color, theme, 16.dp)
+                .then(
+                    if (editing) Modifier else Modifier.combinedClickable(
+                        onClick = { vm.openPlace(place) },
+                        onLongClick = {
+                            haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress)
+                            onEdit()
+                        },
+                    ),
+                )
+                .padding(horizontal = 12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(Modifier.weight(1f)) {
+                Txt(place.label(), if (size == TileSize.Half) Type.tile else Type.section, on)
+                Txt(library.count(place).toString(), Type.small, on)
+            }
+            if (size == TileSize.Large && place == Place.Playlists && library.playlists.isNotEmpty()) {
+                Mosaic(library.tracksOf(library.playlists.first()), Modifier.size(88.dp))
+            } else {
+                Glyph(place.glyph(), if (size == TileSize.Large) 52.dp else 30.dp, on)
             }
         }
-        hidden.forEach { place ->
-            Row(Modifier.fillMaxWidth().height(48.dp), verticalAlignment = Alignment.CenterVertically) {
-                Box(Modifier.size(14.dp).clip(CircleShape).background(p.surfaceHigh))
-                Spacer(Modifier.width(12.dp))
-                Txt(place.label(), Type.body, p.muted, Modifier.weight(1f))
-                IconTap(Icons.Rounded.VisibilityOff, p.muted, 20.dp, 40.dp) { vm.prefs.updatePlaces(shown + place) }
-                Spacer(Modifier.width(40.dp))
-            }
+        if (editing) {
+            // Hide.
+            Box(
+                Modifier
+                    .align(Alignment.TopStart)
+                    .padding(4.dp)
+                    .size(24.dp)
+                    .clip(CircleShape)
+                    .background(Color.Black.copy(alpha = 0.55f))
+                    .clickable { if (vm.prefs.places.size > 1) vm.prefs.updatePlaces(vm.prefs.places - place) },
+                contentAlignment = Alignment.Center,
+            ) { Icon(Icons.Rounded.Remove, null, tint = Color.White, modifier = Modifier.size(16.dp)) }
+            // Resize: drag sideways for width, down for height; a tap steps through the sizes.
+            Box(
+                Modifier
+                    .align(Alignment.BottomEnd)
+                    .padding(4.dp)
+                    .size(28.dp)
+                    .clip(CircleShape)
+                    .background(Color.Black.copy(alpha = 0.55f))
+                    .clickable { vm.prefs.cycleTileSize(place) }
+                    .pointerInput(place) {
+                        var dx = 0f
+                        var dy = 0f
+                        detectDragGestures(
+                            onDragStart = { dx = 0f; dy = 0f; onMoving(true) },
+                            onDragEnd = { onMoving(false) },
+                            onDragCancel = { onMoving(false) },
+                        ) { change, amount ->
+                            change.consume()
+                            dx += amount.x
+                            dy += amount.y
+                            val step = 36.dp.toPx()
+                            val current = vm.prefs.tileSize(place)
+                            val next = when {
+                                dy > step -> TileSize.Large
+                                dy < -step && current == TileSize.Large -> TileSize.Full
+                                dx > step && current == TileSize.Half -> TileSize.Full
+                                dx < -step -> TileSize.Half
+                                else -> null
+                            }
+                            if (next != null && next != current) {
+                                vm.prefs.setTileSize(place, next)
+                                dx = 0f
+                                dy = 0f
+                            }
+                        }
+                    },
+                contentAlignment = Alignment.Center,
+            ) { Icon(Icons.Rounded.OpenInFull, null, tint = Color.White, modifier = Modifier.size(15.dp)) }
         }
     }
 }

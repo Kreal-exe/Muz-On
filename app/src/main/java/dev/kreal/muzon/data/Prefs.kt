@@ -8,6 +8,7 @@ import androidx.compose.runtime.setValue
 enum class AppTheme { Poster, Detailed, Aero }
 enum class ColorMode { System, Dark, Black, Light }
 enum class LyricsSize { Small, Medium, Large }
+enum class TileSize { Half, Full, Large }
 enum class Place { Playlists, Artists, Albums, Songs, Recent, Genres }
 
 class Prefs(context: Context) {
@@ -96,6 +97,28 @@ class Prefs(context: Context) {
     fun updatePlaces(list: List<Place>) {
         places = list
         sp.edit().putString("places", list.joinToString(",") { it.name }).apply()
+    }
+
+    private val tileSizes = androidx.compose.runtime.mutableStateMapOf<Place, TileSize>().apply {
+        Place.entries.forEach { place ->
+            val saved = TileSize.entries.firstOrNull { it.name == sp.getString("tile_${place.name}", null) }
+            if (saved != null) put(place, saved)
+        }
+    }
+
+    fun tileSize(place: Place): TileSize = tileSizes[place] ?: TileSize.Half
+
+    fun setTileSize(place: Place, size: TileSize) {
+        if (tileSize(place) == size) return
+        tileSizes[place] = size
+        sp.edit().putString("tile_${place.name}", size.name).apply()
+    }
+
+    /** A long press steps through half width, full width and full width and tall. */
+    fun cycleTileSize(place: Place) {
+        val next = TileSize.entries[(tileSize(place).ordinal + 1) % TileSize.entries.size]
+        tileSizes[place] = next
+        sp.edit().putString("tile_${place.name}", next.name).apply()
     }
 
     fun sortOf(playlistId: String): Pair<PlaylistSort, Boolean> {

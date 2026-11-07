@@ -9,30 +9,16 @@ import androidx.activity.enableEdgeToEdge
 import dev.kreal.muzon.ui.AppRoot
 
 class MainActivity : ComponentActivity() {
-    private val frameRate = FrameRateKeeper(this)
-
     override fun onCreate(savedInstanceState: Bundle?) {
         enableEdgeToEdge()
         super.onCreate(savedInstanceState)
         preferFastestMode()
         setContent { AppRoot() }
-        frameRate.attach()
     }
 
     override fun onConfigurationChanged(newConfig: Configuration) {
         super.onConfigurationChanged(newConfig)
         preferFastestMode() // each screen of a foldable has its own display modes
-        frameRate.displayChanged()
-    }
-
-    override fun onStart() {
-        super.onStart()
-        frameRate.start()
-    }
-
-    override fun onStop() {
-        frameRate.stop()
-        super.onStop()
     }
 
     /** The phone may otherwise hold the screen at 60 Hz for an app it does not know. */

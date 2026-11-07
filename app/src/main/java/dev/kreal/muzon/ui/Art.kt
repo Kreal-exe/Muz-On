@@ -50,7 +50,7 @@ class ArtFetcher(private val key: ArtKey, private val app: MuzOnApp) : Fetcher {
         val dir = File(app.cacheDir, "art").apply { mkdirs() }
         val file = File(dir, "${key.trackId}_${if (key.large) "l" else "s"}.jpg")
         if (!file.exists() || file.length() == 0L) {
-            val empty = File(dir, "${key.trackId}.noart")
+            val empty = File(dir, "${key.trackId}.noart2")
             if (empty.exists()) return@withContext null
             val bytes = embedded(key.uri) ?: borrow() ?: online(dir)
             if (bytes == null) {
@@ -76,8 +76,13 @@ class ArtFetcher(private val key: ArtKey, private val app: MuzOnApp) : Fetcher {
         }
         val saved = File(dir, "${key.trackId}.web")
         if (saved.exists()) return saved.readBytes()
-        val track = app.repository.library.value?.byId?.get(key.trackId) ?: return null
+        val track = app.repository.library.value?.byId?.get(key.trackId)
+        if (track == null) {
+            online = OnlineArt.Outcome.Unavailable
+            return null
+        }
         val outcome = withContext(Art.web) { OnlineArt.find(track.shownArtist, track.title) }
+        android.util.Log.i("OnlineArt", "${track.shownArtist} / ${track.title}: ${outcome.javaClass.simpleName}")
         online = outcome
         return (outcome as? OnlineArt.Outcome.Found)?.bytes?.also { saved.writeBytes(it) }
     }

@@ -10,6 +10,7 @@ import androidx.media3.session.MediaSessionService
 import dev.kreal.muzon.MainActivity
 import dev.kreal.muzon.MuzOnApp
 
+@androidx.media3.common.util.UnstableApi
 class PlaybackService : MediaSessionService() {
     private var session: MediaSession? = null
 
@@ -31,6 +32,7 @@ class PlaybackService : MediaSessionService() {
         player.setPlaybackSpeed(app.prefs.speed)
         app.exoPlayer = player
         session = MediaSession.Builder(this, player)
+            .setBitmapLoader(ArtBitmapLoader(app))
             .setSessionActivity(
                 PendingIntent.getActivity(
                     this,

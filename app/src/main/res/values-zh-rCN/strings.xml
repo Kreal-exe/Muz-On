@@ -79,6 +79,7 @@
     <string name="s_online_art_hint">将无图片歌曲的艺人和标题发送至 Deezer 和 iTunes</string>
     <string name="s_lyrics_lead">提前显示歌词</string>
     <string name="seconds_short">%1$.2f 秒</string>
+    <string name="up_next">接下来</string>
     <string name="s_about">关于</string>
     <string name="s_privacy">隐私政策</string>
     <plurals name="songs">
