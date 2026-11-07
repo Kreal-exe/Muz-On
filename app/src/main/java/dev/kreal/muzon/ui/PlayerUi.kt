@@ -910,6 +910,7 @@ fun CompactPlayer(vm: AppViewModel, tabsHeight: Dp, modifier: Modifier = Modifie
                         alpha = (1f - vm.sheet / 0.12f).coerceIn(0f, 1f)
                         translationY = if (visible) 0f else -100000f // out of reach of touches
                     }
+                    // Room for the three buttons, which arrive here from the full player.
                     .padding(end = MINI_BUTTONS + 12.dp)
                     .clickable(interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }, indication = null) { settleTo(1f) }
                     .padding(start = with(density) { (g.miniArtX + g.miniArtSize).toDp() } + 10.dp),
@@ -919,8 +920,6 @@ fun CompactPlayer(vm: AppViewModel, tabsHeight: Dp, modifier: Modifier = Modifie
                     Txt(track.title.trim(), Type.bodyBold, onCover)
                     Txt(track.artist, Type.small, onCover.copy(alpha = 0.8f))
                 }
-                // Room for the three buttons, which arrive here from the full player.
-                Spacer(Modifier.width(MINI_BUTTONS))
             }
 
             // One artwork travels from the mini player to the top of the full page.
