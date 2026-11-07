@@ -278,6 +278,7 @@ fun SettingsScreen(vm: AppViewModel, library: Library) {
             ) { prefs.lyricsSize = it }
         }
         item { Toggle(stringResource(R.string.s_keep_screen), null, prefs.keepScreenForLyrics) { prefs.keepScreenForLyrics = it } }
+        item { Toggle(stringResource(R.string.s_lyric_popup), null, prefs.lyricPopup) { prefs.lyricPopup = it } }
 
         item { Section(stringResource(R.string.s_about)) }
         item { Row_(stringResource(R.string.app_name), BuildConfig.VERSION_NAME) }

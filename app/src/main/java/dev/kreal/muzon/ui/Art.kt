@@ -56,7 +56,7 @@ class ArtFetcher(private val key: ArtKey, private val app: MuzOnApp) : Fetcher {
                 empty.createNewFile()
                 return@withContext null
             }
-            val bitmap = decode(bytes, if (key.large) 1400 else 320) ?: return@withContext null
+            val bitmap = decode(bytes, if (key.large) 1080 else 320) ?: return@withContext null
             val temp = File(dir, "${file.name}.tmp")
             temp.outputStream().use { bitmap.compress(Bitmap.CompressFormat.JPEG, 88, it) }
             bitmap.recycle()

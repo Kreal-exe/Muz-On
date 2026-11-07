@@ -52,7 +52,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
@@ -187,13 +186,19 @@ private fun CompactShell(vm: AppViewModel, library: Library) {
             StackHost(
                 vm.nav,
                 holder,
-                Modifier.graphicsLayer {
-                    val s = 1f - 0.05f * vm.sheet
-                    scaleX = s
-                    scaleY = s
-                    transformOrigin = TransformOrigin(0.5f, 0.35f)
-                },
+                // Nothing to draw under a full player, and no scaling of a whole list on every frame.
+                Modifier.graphicsLayer { alpha = if (vm.sheet >= 1f) 0f else 1f },
             ) { route -> RouteContent(route, vm, library) }
+        }
+        if (hasTrack) {
+            Box(
+                Modifier
+                    .align(Alignment.BottomCenter)
+                    .fillMaxWidth()
+                    .height(tabsHeight + 36.dp)
+                    .graphicsLayer { translationY = vm.sheet * (tabsHeight + 36.dp).toPx() }
+                    .background(p.background),
+            )
         }
         CompactPlayer(vm, tabsHeight)
         TabBar(

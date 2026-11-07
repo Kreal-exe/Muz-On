@@ -73,6 +73,8 @@
     <string name="size_medium">Mittel</string>
     <string name="size_large">Groß</string>
     <string name="s_keep_screen">Bildschirm bei Liedtext anlassen</string>
+    <string name="up_next">Als Nächstes</string>
+    <string name="s_lyric_popup">Aktuelle Zeile über dem Miniplayer</string>
     <string name="s_about">Über</string>
     <string name="s_privacy">Datenschutz</string>
     <plurals name="songs">

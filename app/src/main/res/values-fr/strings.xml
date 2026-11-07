@@ -73,6 +73,8 @@
     <string name="size_medium">Moyen</string>
     <string name="size_large">Grand</string>
     <string name="s_keep_screen">Garder l’écran allumé</string>
+    <string name="up_next">À suivre</string>
+    <string name="s_lyric_popup">Ligne en cours au-dessus du mini-lecteur</string>
     <string name="s_about">À propos</string>
     <string name="s_privacy">Confidentialité</string>
     <plurals name="songs">

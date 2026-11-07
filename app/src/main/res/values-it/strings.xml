@@ -73,6 +73,8 @@
     <string name="size_medium">Medio</string>
     <string name="size_large">Grande</string>
     <string name="s_keep_screen">Schermo acceso con il testo</string>
+    <string name="up_next">Successivi</string>
+    <string name="s_lyric_popup">Riga corrente sopra il mini player</string>
     <string name="s_about">Informazioni</string>
     <string name="s_privacy">Privacy</string>
     <plurals name="songs">

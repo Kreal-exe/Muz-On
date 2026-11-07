@@ -41,6 +41,11 @@ class Prefs(context: Context) {
         get() = keepScreenState.value
         set(v) { keepScreenState.value = v; sp.edit().putBoolean("keepScreen", v).apply() }
 
+    private val lyricPopupState = mutableStateOf(sp.getBoolean("lyricPopup", true))
+    var lyricPopup: Boolean
+        get() = lyricPopupState.value
+        set(v) { lyricPopupState.value = v; sp.edit().putBoolean("lyricPopup", v).apply() }
+
     private val skipSilenceState = mutableStateOf(sp.getBoolean("skipSilence", false))
     var skipSilence: Boolean
         get() = skipSilenceState.value

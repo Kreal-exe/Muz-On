@@ -73,6 +73,8 @@
     <string name="size_medium">Medio</string>
     <string name="size_large">Grande</string>
     <string name="s_keep_screen">Pantalla encendida con letra</string>
+    <string name="up_next">A continuación</string>
+    <string name="s_lyric_popup">Línea actual sobre el minirreproductor</string>
     <string name="s_about">Acerca de</string>
     <string name="s_privacy">Privacidad</string>
     <plurals name="songs">

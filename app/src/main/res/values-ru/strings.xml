@@ -73,6 +73,8 @@
     <string name="size_medium">Средний</string>
     <string name="size_large">Крупный</string>
     <string name="s_keep_screen">Не гасить экран с текстом</string>
+    <string name="up_next">Дальше</string>
+    <string name="s_lyric_popup">Строка текста над мини-плеером</string>
     <string name="s_about">О приложении</string>
     <string name="s_privacy">Политика конфиденциальности</string>
     <plurals name="songs">

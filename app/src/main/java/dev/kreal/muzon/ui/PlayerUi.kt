@@ -33,6 +33,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.pager.HorizontalPager
@@ -79,6 +80,8 @@ import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
 import androidx.compose.ui.input.nestedscroll.NestedScrollSource
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.onPlaced
+import androidx.compose.ui.layout.positionInParent
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalView
@@ -115,7 +118,7 @@ private val sheetSpring = spring<Float>(dampingRatio = 1f, stiffness = 340f)
 
 /** Saturated flat colour of a track's cover, kept dark enough for its text to read. */
 @Composable
-private fun coverColor(track: Track?, enabled: Boolean, fallback: Color): androidx.compose.runtime.State<Color> {
+private fun coverColor(track: Track?, enabled: Boolean, fallback: Color): CoverColors {
     val context = LocalContext.current
     val target by produceState(fallback, track?.id, enabled) {
         val key = track?.takeIf { enabled }?.let { Art.key(it, false) }
@@ -137,8 +140,11 @@ private fun coverColor(track: Track?, enabled: Boolean, fallback: Color): androi
         }
         value = result ?: fallback
     }
-    return animateColorAsState(target, tween(450), label = "cover")
+    return CoverColors(target, animateColorAsState(target, tween(450), label = "cover"))
 }
+
+/** [fill] animates and is read only while drawing; [target] is for icons, so a change recomposes once. */
+private class CoverColors(val target: Color, val fill: androidx.compose.runtime.State<Color>)
 
 private class Position(val conn: PlayerConnection) {
     val value = mutableLongStateOf(0L)
@@ -368,24 +374,7 @@ private fun LyricsPanel(vm: AppViewModel, position: Position, on: Color, modifie
 private fun LyricsList(lyrics: Lyrics, position: Position, conn: PlayerConnection, on: Color, style: androidx.compose.ui.text.TextStyle) {
     val state = rememberLazyListState()
     val timed = lyrics.timed
-    val active by remember(timed) {
-        derivedStateOf {
-            val now = position.value.longValue
-            var low = 0
-            var high = timed.lastIndex
-            var found = -1
-            while (low <= high) {
-                val mid = (low + high) / 2
-                if (timed[mid].timeMs <= now) {
-                    found = mid
-                    low = mid + 1
-                } else {
-                    high = mid - 1
-                }
-            }
-            found
-        }
-    }
+    val active by remember(timed) { derivedStateOf { activeLine(timed, position.value.longValue) } }
     var lastTouch by remember { mutableLongStateOf(0L) }
     LaunchedEffect(active) {
         if (active >= 0 && System.currentTimeMillis() - lastTouch > 3000) {
@@ -493,8 +482,9 @@ fun CompactPlayer(vm: AppViewModel, tabsHeight: Dp, modifier: Modifier = Modifie
     val systemTop = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
     val systemBottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
     val cover = coverColor(track, vm.prefs.coverColor, p.surfaceHigh)
-    val onCover by remember { derivedStateOf { Blocks.on(cover.value) } }
+    val onCover = Blocks.on(cover.target)
     val position = rememberPosition(conn)
+    val lyrics by produceState<Lyrics?>(null, track.id) { value = LyricsReader.read(track) }
     val panelState = remember { mutableFloatStateOf(if (vm.panel == PlayerPanel.None) 0f else 1f) }
     LaunchedEffect(vm.panel) {
         animate(panelState.floatValue, if (vm.panel == PlayerPanel.None) 0f else 1f, animationSpec = sheetSpring) { v, _ -> panelState.floatValue = v }
@@ -550,7 +540,7 @@ fun CompactPlayer(vm: AppViewModel, tabsHeight: Dp, modifier: Modifier = Modifie
                     val f = vm.sheet
                     val inset = lerp(g.miniMargin, 0f, f)
                     drawRoundRect(
-                        cover.value,
+                        cover.fill.value,
                         Offset(inset, 0f),
                         Size(size.width - inset * 2, lerp(g.miniHeight, size.height, f)),
                         CornerRadius(lerp(14.dp.toPx(), 0f, f)),
@@ -571,28 +561,29 @@ fun CompactPlayer(vm: AppViewModel, tabsHeight: Dp, modifier: Modifier = Modifie
                     },
                 ),
         ) {
-            // Full page. Always composed, so opening it never has to build anything.
-            FullPageBody(vm, g, position, cover, onCover, panelState, nested, Modifier.graphicsLayer { alpha = ((vm.sheet - 0.2f) / 0.6f).coerceIn(0f, 1f) })
+            // Both stay composed: nothing is built or thrown away while the finger moves.
+            FullPageBody(vm, g, position, cover.target, onCover, panelState, nested, Modifier.graphicsLayer { alpha = ((vm.sheet - 0.2f) / 0.6f).coerceIn(0f, 1f) })
 
-            // Mini row.
-            val miniActive by remember { derivedStateOf { vm.sheet < 0.2f } }
-            if (miniActive) {
-                Row(
-                    Modifier
-                        .fillMaxWidth()
-                        .height(with(density) { g.miniHeight.toDp() })
-                        .graphicsLayer { alpha = (1f - vm.sheet / 0.2f).coerceIn(0f, 1f) }
-                        .clickable(interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }, indication = null) { settleTo(1f) }
-                        .padding(start = with(density) { (g.miniArtX + g.miniArtSize).toDp() } + 10.dp, end = 14.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Column(Modifier.weight(1f)) {
-                        Txt(track.title.trim(), Type.bodyBold, onCover)
-                        Txt(track.artist, Type.small, onCover.copy(alpha = 0.8f))
+            Row(
+                Modifier
+                    .fillMaxWidth()
+                    .height(with(density) { g.miniHeight.toDp() })
+                    .graphicsLayer {
+                        val visible = vm.sheet < 0.2f
+                        alpha = (1f - vm.sheet / 0.2f).coerceIn(0f, 1f)
+                        translationY = if (visible) 0f else -100000f // out of reach of touches
                     }
-                    PlayButton(conn, 38.dp, onCover, cover.value)
-                    IconTap(Icons.Rounded.SkipNext, onCover, 28.dp, 44.dp) { conn.next() }
+                    .clickable(interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }, indication = null) { settleTo(1f) }
+                    .padding(start = with(density) { (g.miniArtX + g.miniArtSize).toDp() } + 10.dp, end = 12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Column(Modifier.weight(1f)) {
+                    Txt(track.title.trim(), Type.bodyBold, onCover)
+                    Txt(track.artist, Type.small, onCover.copy(alpha = 0.8f))
                 }
+                IconTap(Icons.Rounded.SkipPrevious, onCover, 26.dp, 40.dp, label = stringResource(R.string.previous)) { conn.previous() }
+                PlayButton(conn, 38.dp, onCover, cover.target)
+                IconTap(Icons.Rounded.SkipNext, onCover, 26.dp, 40.dp, label = stringResource(R.string.next)) { conn.next() }
             }
 
             // One artwork travels from the mini player to the full page and to the lyrics header.
@@ -619,7 +610,67 @@ fun CompactPlayer(vm: AppViewModel, tabsHeight: Dp, modifier: Modifier = Modifie
                 ArtPager(conn, Modifier.fillMaxSize(), { vm.sheet > 0.98f && panelState.floatValue < 0.02f })
             }
         }
+
+        if (vm.prefs.lyricPopup) {
+            LyricPopup(
+                lyrics,
+                position,
+                cover.fill,
+                onCover,
+                Modifier
+                    .padding(start = 14.dp, end = 14.dp, top = with(density) { g.miniTop.toDp() } - 40.dp)
+                    .graphicsLayer {
+                        alpha = (1f - vm.sheet / 0.12f).coerceIn(0f, 1f)
+                        translationY = if (vm.sheet < 0.12f) 0f else -100000f
+                    },
+            ) {
+                vm.panel = PlayerPanel.Lyrics
+                settleTo(1f)
+            }
+        }
     }
+}
+
+/** The current line, floating over the mini player. Absent when the track has no timed lyrics. */
+@Composable
+private fun LyricPopup(
+    lyrics: Lyrics?,
+    position: Position,
+    fill: androidx.compose.runtime.State<Color>,
+    on: Color,
+    modifier: Modifier,
+    onClick: () -> Unit,
+) {
+    val timed = lyrics?.timed.orEmpty()
+    val line by remember(timed) { derivedStateOf { timed.getOrNull(activeLine(timed, position.value.longValue))?.text } }
+    val shown = line ?: return
+    Box(
+        modifier
+            .clip(RoundedCornerShape(12.dp))
+            .drawBehind { drawRect(fill.value) }
+            .clickable(onClick = onClick)
+            .padding(horizontal = 12.dp, vertical = 6.dp),
+    ) {
+        androidx.compose.animation.Crossfade(shown, animationSpec = tween(180), label = "line") { text ->
+            Txt(text, Type.small.copy(fontWeight = androidx.compose.ui.text.font.FontWeight(600)), on)
+        }
+    }
+}
+
+private fun activeLine(timed: List<LyricLine>, now: Long): Int {
+    var low = 0
+    var high = timed.lastIndex
+    var found = -1
+    while (low <= high) {
+        val mid = (low + high) / 2
+        if (timed[mid].timeMs <= now) {
+            found = mid
+            low = mid + 1
+        } else {
+            high = mid - 1
+        }
+    }
+    return found
 }
 
 private fun geometry(density: Density, width: Float, height: Float, tabs: Dp, top: Dp): Geometry = with(density) {
@@ -628,7 +679,7 @@ private fun geometry(density: Density, width: Float, height: Float, tabs: Dp, to
     val margin = 8.dp.toPx()
     val pad = 22.dp.toPx()
     val grabber = top.toPx() + 26.dp.toPx()
-    val artSize = min(width - pad * 2, height * 0.45f)
+    val artSize = min(width - pad * 2, height * 0.40f)
     Geometry(
         width, height, miniTop, miniHeight, margin,
         artX = (width - artSize) / 2,
@@ -639,7 +690,7 @@ private fun geometry(density: Density, width: Float, height: Float, tabs: Dp, to
         miniArtSize = 42.dp.toPx(),
         headArtY = grabber,
         headArtSize = 56.dp.toPx(),
-        textY = grabber + artSize + 16.dp.toPx(),
+        textY = grabber + artSize + 14.dp.toPx(),
     )
 }
 
@@ -648,7 +699,7 @@ private fun FullPageBody(
     vm: AppViewModel,
     g: Geometry,
     position: Position,
-    cover: androidx.compose.runtime.State<Color>,
+    cover: Color,
     onCover: Color,
     panelState: androidx.compose.runtime.MutableFloatState,
     nested: NestedScrollConnection,
@@ -659,8 +710,10 @@ private fun FullPageBody(
     val density = LocalDensity.current
     val systemTop = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
     val systemBottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
+    val controlsTop = remember { mutableFloatStateOf(0f) }
+    val controlsHeight = remember { mutableFloatStateOf(0f) }
+    val artEnd = with(density) { (g.artX + g.headArtSize).toDp() } + 12.dp
     Box(modifier.fillMaxSize()) {
-        // Grabber.
         Box(
             Modifier
                 .align(Alignment.TopCenter)
@@ -669,22 +722,46 @@ private fun FullPageBody(
                 .clip(CircleShape)
                 .background(onCover.copy(alpha = 0.45f)),
         )
-        // Title moves beside the small artwork when a panel opens.
-        val artEnd = with(density) { (g.artX + g.headArtSize).toDp() } + 12.dp
-        Column(
-            Modifier
-                .fillMaxWidth()
-                .graphicsLayer {
-                    val q = panelState.floatValue
-                    translationY = lerp(g.textY, g.headArtY + 6.dp.toPx(), q)
-                    translationX = lerp(g.artX, g.artX + g.headArtSize + 12.dp.toPx(), q)
-                }
-                .padding(end = 28.dp + artEnd * 0f),
-        ) {
+        Column(Modifier.fillMaxSize().padding(top = with(density) { g.textY.toDp() }, start = 22.dp, end = 22.dp)) {
+            // The title moves beside the small artwork when a panel opens.
             val small by remember { derivedStateOf { panelState.floatValue > 0.5f } }
-            Txt(track?.title?.trim().orEmpty(), if (small) Type.tile else Type.heroPlayer, onCover, maxLines = if (small) 1 else 2, modifier = Modifier.padding(end = if (small) artEnd else 24.dp))
-            Spacer(Modifier.height(3.dp))
-            Txt(listOfNotNull(track?.artist, track?.album?.takeIf { it.isNotBlank() }).joinToString(" · "), Type.body, onCover.copy(alpha = 0.85f), modifier = Modifier.padding(end = if (small) artEnd else 24.dp))
+            Column(
+                Modifier.graphicsLayer {
+                    val q = panelState.floatValue
+                    translationY = q * (g.headArtY + 6.dp.toPx() - g.textY)
+                    translationX = q * (g.headArtSize + 12.dp.toPx())
+                },
+            ) {
+                val end = if (small) artEnd else 0.dp
+                Txt(track?.title?.trim().orEmpty(), if (small) Type.tile else Type.heroPlayer, onCover, maxLines = if (small) 1 else 2, modifier = Modifier.padding(end = end))
+                Spacer(Modifier.height(2.dp))
+                Txt(listOfNotNull(track?.artist, track?.album?.takeIf { it.isNotBlank() }).joinToString(" · "), Type.body, onCover.copy(alpha = 0.85f), modifier = Modifier.padding(end = end))
+            }
+            Spacer(Modifier.height(4.dp))
+            // Sits under the title, and at the bottom of the screen while a panel is open.
+            Column(
+                Modifier
+                    .onPlaced {
+                        controlsTop.floatValue = g.textY + it.positionInParent().y
+                        controlsHeight.floatValue = it.size.height.toFloat()
+                    }
+                    .graphicsLayer {
+                        val bottomY = g.height - controlsHeight.floatValue - systemBottom.toPx()
+                        translationY = panelState.floatValue * (bottomY - controlsTop.floatValue)
+                    },
+            ) {
+                SeekBar(position, conn, onCover)
+                Controls(conn, onCover, cover, big = 62.dp)
+                PanelToggles(vm, onCover)
+            }
+            UpNext(
+                conn,
+                onCover,
+                Modifier
+                    .weight(1f)
+                    .nestedScroll(nested)
+                    .graphicsLayer { alpha = 1f - panelState.floatValue },
+            )
         }
         val panel = vm.panel
         if (panel != PlayerPanel.None) {
@@ -692,25 +769,47 @@ private fun FullPageBody(
             Box(
                 Modifier
                     .fillMaxSize()
-                    .padding(top = headBottom, bottom = 196.dp + systemBottom, start = 22.dp, end = 22.dp)
+                    .padding(top = headBottom, bottom = 150.dp + systemBottom, start = 22.dp, end = 22.dp)
                     .nestedScroll(nested)
                     .graphicsLayer { alpha = panelState.floatValue },
             ) {
                 if (panel == PlayerPanel.Lyrics) LyricsPanel(vm, position, onCover, Modifier.fillMaxSize()) else QueuePanel(conn, onCover, Modifier.fillMaxSize())
             }
         }
-        Column(Modifier.align(Alignment.BottomCenter).padding(start = 22.dp, end = 22.dp, bottom = systemBottom + 4.dp)) {
-            SeekBar(position, conn, onCover)
-            Spacer(Modifier.height(4.dp))
-            CoverReadingControls(conn, onCover, cover)
-            PanelToggles(vm, onCover)
-        }
     }
 }
 
+/** What plays next, in play order, under the controls. */
 @Composable
-private fun CoverReadingControls(conn: PlayerConnection, on: Color, cover: androidx.compose.runtime.State<Color>) {
-    Controls(conn, on, cover.value)
+private fun UpNext(conn: PlayerConnection, on: Color, modifier: Modifier) {
+    val order = conn.playOrder
+    val queue = conn.queue
+    val start = conn.playOrderPosition + 1
+    val next = remember(order, start) { if (start < order.size) order.subList(start, order.size) else emptyList() }
+    val systemBottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
+    LazyColumn(modifier.fillMaxWidth(), contentPadding = PaddingValues(bottom = systemBottom + 6.dp)) {
+        if (next.isNotEmpty()) {
+            item(key = "head", contentType = "head") {
+                Txt(stringResource(R.string.up_next), Type.tile, on.copy(alpha = 0.8f), Modifier.padding(top = 2.dp, bottom = 5.dp))
+            }
+        }
+        items(next, key = { it }, contentType = { "row" }) { window ->
+            val track = queue.getOrNull(window) ?: return@items
+            Row(
+                Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp)).clickable { conn.seekToWindow(window) }.padding(vertical = 4.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                TrackArt(track, Modifier.size(38.dp), Radius6)
+                Spacer(Modifier.width(10.dp))
+                Column(Modifier.weight(1f)) {
+                    Txt(track.title.trim(), Type.body, on)
+                    Txt(track.artist, Type.small, on.copy(alpha = 0.7f))
+                }
+                Spacer(Modifier.width(6.dp))
+                Txt(formatTime(track.durationMs), Type.tiny, on.copy(alpha = 0.7f))
+            }
+        }
+    }
 }
 
 // ---- Inner screen: player always open in its own column
@@ -723,12 +822,12 @@ fun PlayerPane(vm: AppViewModel, modifier: Modifier = Modifier) {
     val systemTop = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
     val systemBottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
     val cover = coverColor(track, vm.prefs.coverColor, p.surfaceHigh)
-    val onCover by remember { derivedStateOf { Blocks.on(cover.value) } }
+    val onCover = Blocks.on(cover.target)
     val position = rememberPosition(conn)
     Column(
         modifier
             .fillMaxHeight()
-            .drawBehind { drawRect(cover.value) }
+            .drawBehind { drawRect(cover.fill.value) }
             .padding(start = 16.dp, end = 16.dp, top = systemTop + 8.dp, bottom = systemBottom + 6.dp),
     ) {
         if (track == null) {
@@ -746,7 +845,7 @@ fun PlayerPane(vm: AppViewModel, modifier: Modifier = Modifier) {
         Txt(track.artist, Type.body, onCover.copy(alpha = 0.85f))
         Spacer(Modifier.height(4.dp))
         SeekBar(position, conn, onCover)
-        Controls(conn, onCover, cover.value, big = 60.dp)
+        Controls(conn, onCover, cover.target, big = 60.dp)
         PanelToggles(vm, onCover)
         val panel = if (vm.panel == PlayerPanel.None) PlayerPanel.Lyrics else vm.panel
         Box(Modifier.fillMaxWidth().weight(0.54f)) {
