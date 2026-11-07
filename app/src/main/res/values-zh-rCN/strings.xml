@@ -110,6 +110,11 @@
     <string name="s_swipe_art">滑动封面切歌</string>
     <string name="s_auto_skip">跳过无法播放的文件</string>
     <string name="s_keep_playing">关闭应用后继续播放</string>
+    <string name="s_pause_interrupt">短提示音时暂停</string>
+    <string name="s_pause_interrupt_hint">消息和导航时暂停音乐，而不是调低音量</string>
+    <string name="s_recent">“最近”范围</string>
+    <string name="recent_newest">最新 100 首</string>
+    <string name="recent_days">%1$d 天</string>
     <string name="s_seek_step">长按上一首/下一首跳转</string>
     <string name="s_equalizer">均衡器</string>
     <string name="seconds_whole">%1$d 秒</string>

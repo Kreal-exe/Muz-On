@@ -110,6 +110,11 @@
     <string name="s_swipe_art">Scorri la copertina per cambiare brano</string>
     <string name="s_auto_skip">Salta i file non riproducibili</string>
     <string name="s_keep_playing">Continua alla chiusura dell’app</string>
+    <string name="s_pause_interrupt">Pausa per suoni brevi</string>
+    <string name="s_pause_interrupt_hint">Messaggi e navigatore mettono in pausa invece di abbassare</string>
+    <string name="s_recent">«Recenti» include</string>
+    <string name="recent_newest">100 più recenti</string>
+    <string name="recent_days">%1$d giorni</string>
     <string name="s_seek_step">Tieni premuto indietro/avanti per saltare</string>
     <string name="s_equalizer">Equalizzatore</string>
     <string name="seconds_whole">%1$d s</string>

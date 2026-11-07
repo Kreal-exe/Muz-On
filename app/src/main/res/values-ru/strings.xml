@@ -110,6 +110,11 @@
     <string name="s_swipe_art">Листать треки свайпом по обложке</string>
     <string name="s_auto_skip">Пропускать неиграющие файлы</string>
     <string name="s_keep_playing">Играть после закрытия приложения</string>
+    <string name="s_pause_interrupt">Пауза на короткие звуки</string>
+    <string name="s_pause_interrupt_hint">Сообщения и навигатор ставят музыку на паузу, а не делают тише</string>
+    <string name="s_recent">В «Недавних»</string>
+    <string name="recent_newest">100 последних</string>
+    <string name="recent_days">%1$d дн.</string>
     <string name="s_seek_step">Удержание «назад/вперёд» перематывает на</string>
     <string name="s_equalizer">Эквалайзер</string>
     <string name="seconds_whole">%1$d с</string>

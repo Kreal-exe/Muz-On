@@ -257,6 +257,12 @@ fun SettingsScreen(vm: AppViewModel, library: Library) {
         item { Toggle(stringResource(R.string.s_skip_silence), null, prefs.skipSilence) { vm.applySkipSilence(it) } }
         item { Toggle(stringResource(R.string.s_auto_skip), null, prefs.autoSkip) { prefs.autoSkip = it } }
         item { Toggle(stringResource(R.string.s_keep_playing), null, prefs.keepPlayingWhenRemoved) { prefs.keepPlayingWhenRemoved = it } }
+        item { Toggle(stringResource(R.string.s_pause_interrupt), stringResource(R.string.s_pause_interrupt_hint), prefs.pauseOnInterrupt) { prefs.pauseOnInterrupt = it } }
+        item {
+            Choice(stringResource(R.string.s_recent), prefs.recentDays, listOf(0, 7, 30, 90, 365), { if (it == 0) stringResource(R.string.recent_newest) else stringResource(R.string.recent_days, it) }) {
+                prefs.recentDays = it
+            }
+        }
         item {
             Choice(stringResource(R.string.s_seek_step), prefs.seekStepSeconds, listOf(5, 10, 15, 30), { stringResource(R.string.seconds_whole, it) }) {
                 prefs.seekStepSeconds = it

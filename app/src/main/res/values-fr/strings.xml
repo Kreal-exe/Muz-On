@@ -110,6 +110,11 @@
     <string name="s_swipe_art">Balayer la pochette change de titre</string>
     <string name="s_auto_skip">Ignorer les fichiers illisibles</string>
     <string name="s_keep_playing">Continuer après fermeture de l’app</string>
+    <string name="s_pause_interrupt">Pause pour les sons courts</string>
+    <string name="s_pause_interrupt_hint">Messages et navigation mettent la musique en pause au lieu de la baisser</string>
+    <string name="s_recent">« Récents » contient</string>
+    <string name="recent_newest">100 plus récents</string>
+    <string name="recent_days">%1$d jours</string>
     <string name="s_seek_step">Maintenir précédent/suivant saute de</string>
     <string name="s_equalizer">Égaliseur</string>
     <string name="seconds_whole">%1$d s</string>

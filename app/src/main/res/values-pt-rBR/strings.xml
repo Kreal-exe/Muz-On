@@ -110,6 +110,11 @@
     <string name="s_swipe_art">Deslizar a capa troca a música</string>
     <string name="s_auto_skip">Pular arquivos que não tocam</string>
     <string name="s_keep_playing">Continuar ao fechar o app</string>
+    <string name="s_pause_interrupt">Pausar em sons curtos</string>
+    <string name="s_pause_interrupt_hint">Mensagens e navegação pausam a música em vez de abaixá-la</string>
+    <string name="s_recent">“Recentes” inclui</string>
+    <string name="recent_newest">100 mais novos</string>
+    <string name="recent_days">%1$d dias</string>
     <string name="s_seek_step">Segurar anterior/próxima pula</string>
     <string name="s_equalizer">Equalizador</string>
     <string name="seconds_whole">%1$d s</string>

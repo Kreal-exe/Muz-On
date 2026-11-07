@@ -103,12 +103,15 @@ fun AppRoot() {
         }
         LaunchedEffect(topRate) { vm.topFrameRate = topRate }
         val light = !p.isDark
-        val sheetOpen by remember { derivedStateOf { vm.sheet > 0.5f } }
-        SideEffect {
+        // Dark clock and icons on a light page, light ones over the open player. Read in a flow:
+        // a SideEffect does not watch the sheet, so the icons used to stay white after it closed.
+        LaunchedEffect(light, view) {
             val window = (view.context as android.app.Activity).window
-            WindowCompat.getInsetsController(window, view).apply {
-                isAppearanceLightStatusBars = light && !sheetOpen
-                isAppearanceLightNavigationBars = light && !sheetOpen
+            androidx.compose.runtime.snapshotFlow { light && vm.sheet <= 0.5f }.collect { dark ->
+                WindowCompat.getInsetsController(window, view).apply {
+                    isAppearanceLightStatusBars = dark
+                    isAppearanceLightNavigationBars = dark
+                }
             }
         }
         // Without this the phone falls back to 60 Hz the moment a finger lifts: whatever the

@@ -157,6 +157,12 @@ class Prefs(context: Context) {
     var swipeArtwork: Boolean get() = swipeArtState.value; set(v) { swipeArtState.value = v; put("swipeArt", v) }
     private val autoSkipState = flag("autoSkip", true)
     var autoSkip: Boolean get() = autoSkipState.value; set(v) { autoSkipState.value = v; put("autoSkip", v) }
+    private val pauseOnInterruptState = flag("pauseOnInterrupt", false)
+    /** Pause for a short sound from another app (a message, navigation) instead of playing on quietly. */
+    var pauseOnInterrupt: Boolean get() = pauseOnInterruptState.value; set(v) { pauseOnInterruptState.value = v; put("pauseOnInterrupt", v) }
+    private val recentDaysState = mutableStateOf(sp.getInt("recentDays", 0))
+    /** What "Recent" holds: tracks added in so many days, or 0 for the 100 newest. */
+    var recentDays: Int get() = recentDaysState.value; set(v) { recentDaysState.value = v; sp.edit().putInt("recentDays", v).apply() }
     private val keepPlayingState = flag("keepPlaying", true)
     var keepPlayingWhenRemoved: Boolean get() = keepPlayingState.value; set(v) { keepPlayingState.value = v; put("keepPlaying", v) }
 

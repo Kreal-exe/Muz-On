@@ -111,6 +111,11 @@
     <string name="s_swipe_art">Swipe the artwork to change track</string>
     <string name="s_auto_skip">Skip files that cannot be played</string>
     <string name="s_keep_playing">Keep playing when the app is swiped away</string>
+    <string name="s_pause_interrupt">Pause for short sounds</string>
+    <string name="s_pause_interrupt_hint">Messages and navigation pause the music instead of making it quieter</string>
+    <string name="s_recent">Recent holds</string>
+    <string name="recent_newest">100 newest</string>
+    <string name="recent_days">%1$d days</string>
     <string name="s_seek_step">Hold previous / next to jump</string>
     <string name="s_equalizer">Equaliser</string>
     <string name="seconds_whole">%1$d s</string>
