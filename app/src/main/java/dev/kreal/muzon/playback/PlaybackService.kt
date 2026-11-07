@@ -51,9 +51,17 @@ class PlaybackService : MediaSessionService() {
         }
         player.setPlaybackSpeed(app.prefs.speed)
         player.addListener(object : Player.Listener {
+            /** Failures in a row; when every item has failed, skipping on would never end. */
+            var failures = 0
+
+            override fun onIsPlayingChanged(isPlaying: Boolean) {
+                if (isPlaying) failures = 0
+            }
+
             override fun onPlayerError(error: PlaybackException) {
                 // A file that cannot be played is passed over instead of stopping everything.
-                if (app.prefs.autoSkip && player.hasNextMediaItem()) {
+                failures++
+                if (app.prefs.autoSkip && player.hasNextMediaItem() && failures < player.mediaItemCount) {
                     player.seekToNextMediaItem()
                     player.prepare()
                     player.play()
