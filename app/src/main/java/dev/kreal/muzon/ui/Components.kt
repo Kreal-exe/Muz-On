@@ -2,6 +2,7 @@ package dev.kreal.muzon.ui
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
@@ -122,13 +123,22 @@ fun IconTap(icon: ImageVector, tint: Color, size: Dp = 24.dp, box: Dp = 44.dp, m
 }
 
 @Composable
-fun TrackRow(track: Track, isCurrent: Boolean, wantsToPlay: Boolean, number: Int? = null, onClick: () -> Unit) {
+@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
+fun TrackRow(
+    track: Track,
+    isCurrent: Boolean,
+    wantsToPlay: Boolean,
+    number: Int? = null,
+    menu: (@Composable (open: Boolean, setOpen: (Boolean) -> Unit) -> Unit)? = null,
+    onClick: () -> Unit,
+) {
+    var menuOpen by remember { androidx.compose.runtime.mutableStateOf(false) }
     val p = LocalPalette.current
     val available = track.uri != null
     Row(
         Modifier
             .fillMaxWidth()
-            .clickable(enabled = available, onClick = onClick)
+            .combinedClickable(enabled = available || menu != null, onClick = { if (available) onClick() }, onLongClick = { if (menu != null) menuOpen = true })
             .padding(horizontal = 14.dp, vertical = 5.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -147,6 +157,7 @@ fun TrackRow(track: Track, isCurrent: Boolean, wantsToPlay: Boolean, number: Int
             Spacer(Modifier.width(8.dp))
         }
         Txt(formatTime(track.durationMs), Type.tiny, p.muted)
+        if (menu != null) menu(menuOpen) { menuOpen = it }
     }
 }
 

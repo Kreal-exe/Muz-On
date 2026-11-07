@@ -32,6 +32,9 @@ sealed class Route(val key: String) {
     data class GenreRoute(val name: String) : Route("genre:$name")
     data object RecentRoute : Route("recent")
     data object GenresRoute : Route("genres")
+    data object HistoryRoute : Route("history")
+    data object MostPlayedRoute : Route("mostPlayed")
+    data class FolderRoute(val path: String) : Route("folder:$path")
     data object SearchRoute : Route("search")
     data object SettingsRoute : Route("settings")
 }
@@ -118,8 +121,11 @@ class Navigator {
         job = scope.launch { animate(progress, 1f, animationSpec = pageSpring) { v, _ -> progress = v } }
     }
 
-    private fun finishPop() {
+    // The page leaves first; only on the next frame is the stack at rest again. Doing both at once let
+    // the leaving page show for a frame at full width before it was gone.
+    private suspend fun finishPop() {
         if (stack.size > 1) stack.removeAt(stack.lastIndex)
+        withFrameNanos { }
         progress = 1f
     }
 }

@@ -83,7 +83,7 @@ private val audioPermission = if (Build.VERSION.SDK_INT >= 33) Manifest.permissi
 fun AppRoot() {
     val vm: AppViewModel = viewModel()
     val context = LocalContext.current
-    AppThemeProvider(vm.prefs.theme, vm.prefs.colorMode) {
+    AppThemeProvider(vm.prefs.theme, vm.prefs.colorMode, vm.prefs.accent) {
         val p = LocalPalette.current
         var hasAudio by remember {
             mutableStateOf(ContextCompat.checkSelfPermission(context, audioPermission) == PackageManager.PERMISSION_GRANTED)
@@ -175,7 +175,8 @@ private fun Loaded(vm: AppViewModel) {
     BoxWithConstraints(Modifier.fillMaxSize()) {
         val wide = maxWidth >= 600.dp
         SideEffect { vm.isWide = wide }
-        if (wide) WideShell(vm, current) else CompactShell(vm, current)
+        // Tabs at the bottom on every screen, as in a tablet music app; only the open player splits.
+        CompactShell(vm, current)
     }
 }
 
@@ -212,6 +213,9 @@ private fun CompactShell(vm: AppViewModel, library: Library) {
             )
         }
         CompactPlayer(vm, tabsHeight)
+        vm.collectionMenu?.let { tracks ->
+            Box(Modifier.align(Alignment.Center)) { CollectionMenu(vm, tracks, true) { if (!it) vm.collectionMenu = null } }
+        }
         TabBar(
             vm,
             Modifier
@@ -243,11 +247,10 @@ private fun BackHandling(vm: AppViewModel) {
         }
     }
     val queueRaised by remember { derivedStateOf { vm.queueFull > 0f } }
-    BackHandler(enabled = vm.lyricsOpen) { vm.lyricsOpen = false }
     BackHandler(enabled = queueRaised && sheetOpen) {
         scope.launch { animate(vm.queueFull, 0f, animationSpec = spec) { v, _ -> vm.queueFull = v } }
     }
-    PredictiveBackHandler(enabled = sheetOpen && !queueRaised && !vm.lyricsOpen) { progress ->
+    PredictiveBackHandler(enabled = sheetOpen && !queueRaised) { progress ->
         try {
             progress.collect { event -> vm.sheet = 1f - event.progress * 0.25f }
             scope.launch { animate(vm.sheet, 0f, animationSpec = spec) { v, _ -> vm.sheet = v } }
@@ -371,8 +374,8 @@ private fun TabItem(vm: AppViewModel, tab: Tab, theme: AppTheme, p: Palette, mod
             )
             TabIcon(tab, if (!selected) p.muted else if (theme == AppTheme.Aero) Blocks.on(color) else color, 22.dp)
         }
-        Spacer(Modifier.height(3.dp))
-        Txt(
+        if (vm.prefs.tabLabels) Spacer(Modifier.height(3.dp))
+        if (vm.prefs.tabLabels) Txt(
             stringResource(
                 when (tab) {
                     Tab.Home -> R.string.home

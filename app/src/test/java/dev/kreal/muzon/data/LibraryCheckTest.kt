@@ -66,6 +66,13 @@ class LibraryCheckTest {
             assertEquals(p.name, want, p.trackIds)
         }
 
+        // Smart playlists: the rules give exactly what the Mac listed.
+        for (p in parsed.playlists) {
+            val rules = p.rules ?: continue
+            val got = parsed.tracks.filter { SmartRules.evaluate(rules, it) }.map { it.id }.toSet()
+            assertEquals("rules of ${p.name}", p.trackIds.toSet(), got)
+        }
+        println("favourites ${parsed.tracks.count { it.favorite }}")
         val library = Library(LibrarySource.MusicDatabase, parsed.tracks, playlists)
         println("artists ${library.artists.size}: ${library.artists.map { it.name }}")
         println("albums ${library.albums.size}, genres ${library.genres.size}")

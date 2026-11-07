@@ -19,6 +19,9 @@ data class Track(
     val sourcePath: String,
     val uri: String? = null,
     val filePath: String? = null,
+    /** Marked as a favourite (the heart). */
+    val favorite: Boolean = false,
+    val playCount: Int = 0,
 ) {
     /** The artist the track is listed under: album artist, else artist, as Music does. */
     val shownArtist: String get() = albumArtist.ifBlank { artist }.trim()
@@ -33,7 +36,12 @@ data class Playlist(
     val trackIds: List<String>,
     /** True when [trackIds] comes from the order file, the exact order shown by Music. */
     val hasExactOrder: Boolean = false,
-)
+    /** The rules of a smart playlist, to follow changes made on this phone. */
+    val rules: ByteArray? = null,
+) {
+    override fun equals(other: Any?) = other is Playlist && other.id == id && other.trackIds == trackIds && other.name == name
+    override fun hashCode() = id.hashCode() * 31 + trackIds.hashCode()
+}
 
 @Immutable
 data class Album(val key: String, val title: String, val artist: String, val year: Int, val tracks: List<Track>)
@@ -85,6 +93,24 @@ data class Library(
     }
 
     val recentlyAdded: List<Track> by lazy { tracks.sortedByDescending { it.dateAddedMs }.take(100) }
+
+    /** Folder (relative to the music folder, "" for its root) to the tracks directly in it. */
+    val folders: Map<String, List<Track>> by lazy {
+        tracks.filter { it.filePath != null }.groupBy { t ->
+            val path = t.filePath!!
+            val inMusic = path.substringAfter("/Music/", path)
+            inMusic.substringBeforeLast('/', "")
+        }.mapValues { (_, list) -> list.sortedBy { it.filePath!!.substringAfterLast('/').lowercase() } }
+    }
+
+    /** Subfolders directly under [folder], each with how many tracks it holds in all. */
+    fun subfolders(folder: String): List<Pair<String, Int>> {
+        val prefix = if (folder.isEmpty()) "" else "$folder/"
+        return folders.entries.filter { it.key.startsWith(prefix) && it.key.length > prefix.length }
+            .groupBy { prefix + it.key.removePrefix(prefix).substringBefore('/') }
+            .map { (name, entries) -> name to entries.sumOf { it.value.size } }
+            .sortedWith(compareBy(Sorting.collator) { it.first.substringAfterLast('/') })
+    }
 
     private val playlistTracks: Map<String, List<Track>> by lazy {
         playlists.associate { p -> p.id to p.trackIds.mapNotNull(byId::get) }

@@ -96,17 +96,24 @@ object Blocks {
         Place.Songs -> Pink
         Place.Recent -> Yellow
         Place.Genres -> Teal
+        Place.History -> Color(0xFF2F80FF)
+        Place.MostPlayed -> Color(0xFFFF4D4D)
+        Place.Folders -> Color(0xFF8B7CF6)
     }
+
+    /** Accent colours offered in the settings; the first is the default. */
+    val accents = listOf(Color(0xFFFF5A1F), Violet, Pink, Teal, Color(0xFF2F80FF), Color(0xFF9BC21A), Yellow)
 }
 
 @Composable
-fun AppThemeProvider(theme: AppTheme, mode: ColorMode, content: @Composable () -> Unit) {
-    val palette = when (mode) {
+fun AppThemeProvider(theme: AppTheme, mode: ColorMode, accent: Int = 0, content: @Composable () -> Unit) {
+    val base = when (mode) {
         ColorMode.Dark -> DarkPalette
         ColorMode.Black -> BlackPalette
         ColorMode.Light -> LightPalette
         ColorMode.System -> if (isSystemInDarkTheme()) DarkPalette else LightPalette
     }
+    val palette = if (accent == 0) base else base.copy(accent = Blocks.accents.getOrElse(accent) { base.accent })
     val scheme = if (palette.isDark) {
         darkColorScheme(
             primary = palette.accent, background = palette.background, surface = palette.surface,

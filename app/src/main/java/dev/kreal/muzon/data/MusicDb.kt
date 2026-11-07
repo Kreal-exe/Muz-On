@@ -91,7 +91,7 @@ object MusicDb {
             val headerSize = b.getInt(p + 4)
             val total = b.getInt(p + 8)
             var title = ""; var album = ""; var artist = ""; var albumArtist = ""; var genre = ""; var url = ""
-            var duration = 0L; var added = 0L
+            var duration = 0L; var added = 0L; var plays = 0
             var q = p + headerSize
             while (q < p + total) {
                 b.requireTag(q, "boma")
@@ -103,6 +103,7 @@ object MusicDb {
                     0x05 -> genre = b.text(q, size)
                     0x0B -> url = b.text(q, size)
                     0x1B -> albumArtist = b.text(q, size)
+                    0x17 -> plays = b.getInt(q + 20 + 12)
                     0x01 -> {
                         duration = b.getInt(q + 20 + 156).toLong() and 0xFFFFFFFFL
                         val raw = b.getInt(q + 20 + 92).toLong() and 0xFFFFFFFFL
@@ -124,6 +125,8 @@ object MusicDb {
                 durationMs = duration,
                 dateAddedMs = added,
                 sourcePath = fileUrlToPath(url),
+                favorite = b.get(p + 62).toInt() == 2,
+                playCount = plays,
             )
             p += total
         }
@@ -144,6 +147,7 @@ object MusicDb {
             val isMaster = b.get(p + 44).toInt() != 0
             val builtInKind = b.getShort(p + 78).toInt()
             var name = ""
+            var rules: ByteArray? = null
             val ids = ArrayList<String>(b.getInt(p + 16).coerceIn(0, 100_000))
             var q = p + headerSize
             while (q < p + total) {
@@ -151,6 +155,7 @@ object MusicDb {
                 val size = b.getInt(q + 8)
                 when (b.getInt(q + 12)) {
                     0xC8 -> name = b.text(q, size)
+                    0xC9 -> rules = ByteArray(size - 20).also { b.duplicate().apply { position(q + 20) }.get(it) }
                     0xCE -> {
                         b.requireTag(q + 20, "ipfa")
                         ids += b.persistentId(q + 20 + 20)
@@ -160,7 +165,7 @@ object MusicDb {
             }
             // Library, Music, Downloaded, Genius and the like have a built-in kind; they are not the user's.
             if (!isMaster && builtInKind == 0) {
-                result += Playlist(b.persistentId(p + 30), name.trim(), ids)
+                result += Playlist(b.persistentId(p + 30), name.trim(), ids, rules = rules)
             }
             p += total
         }
