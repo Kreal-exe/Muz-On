@@ -195,6 +195,24 @@ fun SettingsScreen(vm: AppViewModel, library: Library) {
             ) { prefs.colorMode = it }
         }
         item { Toggle(stringResource(R.string.s_cover_color), stringResource(R.string.s_cover_color_hint), prefs.coverColor) { prefs.coverColor = it } }
+        item {
+            Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+                Txt(stringResource(R.string.s_accent), Type.body, modifier = Modifier.weight(1f))
+                Blocks.accents.forEachIndexed { i, c ->
+                    Box(
+                        Modifier.padding(start = 6.dp).size(26.dp).clip(CircleShape).background(c)
+                            .clickable { prefs.accent = i },
+                        contentAlignment = Alignment.Center,
+                    ) { if (prefs.accent == i) Icon(Icons.Rounded.Check, null, tint = Color.White, modifier = Modifier.size(16.dp)) }
+                }
+            }
+        }
+
+        item { Section(stringResource(R.string.s_interface)) }
+        item { Toggle(stringResource(R.string.s_tab_labels), null, prefs.tabLabels) { prefs.tabLabels = it } }
+        item { Toggle(stringResource(R.string.s_queue_numbers), null, prefs.queueNumbers) { prefs.queueNumbers = it } }
+        item { Toggle(stringResource(R.string.s_swipe_art), null, prefs.swipeArtwork) { prefs.swipeArtwork = it } }
+        item { Toggle(stringResource(R.string.s_haptics), null, prefs.haptics) { prefs.haptics = it } }
 
         if (Build.VERSION.SDK_INT >= 33) {
             item { Section(stringResource(R.string.s_language)) }
@@ -237,6 +255,24 @@ fun SettingsScreen(vm: AppViewModel, library: Library) {
 
         item { Section(stringResource(R.string.s_playback)) }
         item { Toggle(stringResource(R.string.s_skip_silence), null, prefs.skipSilence) { vm.applySkipSilence(it) } }
+        item { Toggle(stringResource(R.string.s_auto_skip), null, prefs.autoSkip) { prefs.autoSkip = it } }
+        item { Toggle(stringResource(R.string.s_keep_playing), null, prefs.keepPlayingWhenRemoved) { prefs.keepPlayingWhenRemoved = it } }
+        item {
+            Choice(stringResource(R.string.s_seek_step), prefs.seekStepSeconds, listOf(5, 10, 15, 30), { stringResource(R.string.seconds_whole, it) }) {
+                prefs.seekStepSeconds = it
+            }
+        }
+        item {
+            val session = (context.applicationContext as dev.kreal.muzon.MuzOnApp).exoPlayer?.audioSessionId
+            val intent = Intent(android.media.audiofx.AudioEffect.ACTION_DISPLAY_AUDIO_EFFECT_CONTROL_PANEL)
+                .putExtra(android.media.audiofx.AudioEffect.EXTRA_PACKAGE_NAME, context.packageName)
+                .putExtra(android.media.audiofx.AudioEffect.EXTRA_CONTENT_TYPE, android.media.audiofx.AudioEffect.CONTENT_TYPE_MUSIC)
+                .apply { if (session != null) putExtra(android.media.audiofx.AudioEffect.EXTRA_AUDIO_SESSION, session) }
+            // Only offered when the phone has an equaliser to open.
+            if (intent.resolveActivity(context.packageManager) != null) {
+                Row_(stringResource(R.string.s_equalizer), null, { runCatching { context.startActivity(intent) } })
+            }
+        }
         item {
             Choice(stringResource(R.string.s_speed), prefs.speed, listOf(0.75f, 1f, 1.25f, 1.5f, 2f), { "×" + (if (it % 1f == 0f) it.toInt().toString() else it.toString()) }) {
                 vm.applySpeed(it)
@@ -281,6 +317,7 @@ fun SettingsScreen(vm: AppViewModel, library: Library) {
                 { stringResource(R.string.seconds_short, it / 1000f) },
             ) { prefs.lyricsLeadMs = it }
         }
+        item { Toggle(stringResource(R.string.s_cover_lyrics), null, prefs.coverLyrics) { prefs.coverLyrics = it } }
         item { Toggle(stringResource(R.string.s_keep_screen), null, prefs.keepScreenForLyrics) { prefs.keepScreenForLyrics = it } }
         item { Toggle(stringResource(R.string.s_lyric_popup), null, prefs.lyricPopup) { prefs.lyricPopup = it } }
 

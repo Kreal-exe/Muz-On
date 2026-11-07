@@ -10,6 +10,7 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.interaction.collectIsDraggedAsState
 import androidx.compose.foundation.gestures.Orientation
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
@@ -69,6 +70,7 @@ import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.FrameRateCategory
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.composed
 import androidx.compose.ui.preferredFrameRate
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
@@ -388,7 +390,7 @@ private fun CoverLyricLine(vm: AppViewModel, position: Position, modifier: Modif
     val track = vm.connection.current
     val lyrics by produceState<Lyrics?>(null, track?.id) { value = track?.let { LyricsReader.read(it) } }
     val timed = lyrics?.timed.orEmpty()
-    if (timed.isEmpty()) return
+    if (timed.isEmpty() || !vm.prefs.coverLyrics) return
     val lead = vm.prefs.lyricsLeadMs
     val index by remember(timed, lead) { derivedStateOf { activeLine(timed, position.value.longValue + lead) } }
     val style = lyricStyle(lyricSize(vm.prefs.lyricsSize, big = true))
@@ -527,6 +529,7 @@ private fun activeLine(timed: List<LyricLine>, now: Long): Int {
  */
 @Composable
 private fun QueueCard(
+    vm: AppViewModel,
     conn: PlayerConnection,
     modifier: Modifier = Modifier,
     headerModifier: Modifier = Modifier,
@@ -554,13 +557,14 @@ private fun QueueCard(
     Column(modifier.fillMaxWidth().clip(RoundedCornerShape(topStart = 14.dp, topEnd = 14.dp)).background(p.surface)) {
         Column(headerModifier.fillMaxWidth()) {
             if (current != null) {
-                Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
-                    TrackArt(current, Modifier.size(48.dp), Radius6)
-                    Spacer(Modifier.width(12.dp))
+                // The artwork is already above; this row is the name, the heart and the menu.
+                Row(Modifier.fillMaxWidth().padding(start = 16.dp, end = 4.dp, top = 10.dp, bottom = 6.dp), verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {
                         Txt(current.title.trim(), Type.bodyBold, p.text, maxLines = 2)
                         Txt(listOfNotNull(current.artist, current.album.takeIf { it.isNotBlank() }).joinToString(" · "), Type.small, p.muted)
                     }
+                    FavoriteHeart(vm, current.id, p.muted, 22.dp, 40.dp)
+                    TrackMenu(vm, current, p.muted, queueWindow = conn.windowIndex)
                 }
             }
             Row(Modifier.fillMaxWidth().height(36.dp).padding(horizontal = 14.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -574,7 +578,7 @@ private fun QueueCard(
         ) {
             itemsIndexed(order, key = { _, window -> window }, contentType = { _, _ -> 0 }) { index, window ->
                 val track = queue.getOrNull(window) ?: return@itemsIndexed
-                QueueRow(track, index - position, dimmed = index <= position) { conn.seekToWindow(window) }
+                QueueRow(track, if (vm.prefs.queueNumbers) index - position else 0, dimmed = index <= position, menu = { TrackMenu(vm, track, LocalPalette.current.muted, queueWindow = window) }) { conn.seekToWindow(window) }
             }
         }
     }
@@ -619,7 +623,7 @@ private class StopAtNext(private val state: androidx.compose.foundation.lazy.Laz
 
 /** A queue row; [offset] is how far it is from the current track, as the classic player numbers it. */
 @Composable
-private fun QueueRow(track: Track, offset: Int, dimmed: Boolean, onClick: () -> Unit) {
+private fun QueueRow(track: Track, offset: Int, dimmed: Boolean, menu: @Composable () -> Unit, onClick: () -> Unit) {
     val p = LocalPalette.current
     Row(
         Modifier
@@ -642,10 +646,94 @@ private fun QueueRow(track: Track, offset: Int, dimmed: Boolean, onClick: () -> 
         }
         Spacer(Modifier.width(6.dp))
         Txt(formatTime(track.durationMs), Type.tiny, p.muted)
+        menu()
     }
 }
 
 // ---- Compact: mini player that grows into the full one under the finger
+
+private val MINI_BUTTONS = 118.dp
+
+/**
+ * Previous, play and next of the full player, which shrink and fly to their places in the mini player
+ * as the sheet comes down, beside the title, the way the artwork flies to its corner. They stay the
+ * same buttons all the way, so the mini player's buttons are these. Shuffle and repeat fade out.
+ */
+@Composable
+private fun MorphingControls(
+    vm: AppViewModel,
+    conn: PlayerConnection,
+    on: Color,
+    cover: Color,
+    g: Geometry,
+    sheet: () -> androidx.compose.ui.layout.LayoutCoordinates?,
+    fade: Modifier,
+) {
+    val density = LocalDensity.current
+    val dim = on.copy(alpha = 0.55f)
+    // Centres of the mini player's buttons, from its right edge.
+    val miniY = g.miniHeight / 2
+    val nextX = g.width - with(density) { (12.dp + 20.dp).toPx() }
+    val playX = nextX - with(density) { (20.dp + 19.dp).toPx() }
+    val prevX = playX - with(density) { (19.dp + 20.dp).toPx() }
+    fun Modifier.morph(targetX: Float, scale: Float) = this
+        .onPlaced { }
+        .then(
+            Modifier.graphicsLayerWithPlace(sheet) { center ->
+                val k = 1f - vm.sheet
+                translationX = k * (targetX - center.x)
+                translationY = k * (miniY - center.y)
+                val s = scale + (1f - scale) * vm.sheet
+                scaleX = s
+                scaleY = s
+            },
+        )
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+        Box(fade) { IconTap(Icons.Rounded.Shuffle, if (conn.shuffle) on else dim, 24.dp, label = stringResource(R.string.shuffle)) { conn.toggleShuffle() } }
+        val step = vm.prefs.seekStepSeconds * 1000L
+        Box(Modifier.morph(prevX, 26f / 38f)) { HoldButton(Icons.Rounded.SkipPrevious, on, stringResource(R.string.previous), { conn.previous() }) { conn.seekBy(-step) } }
+        Box(Modifier.morph(playX, 38f / 64f)) { PlayButton(conn, 64.dp, on, cover) }
+        Box(Modifier.morph(nextX, 26f / 38f)) { HoldButton(Icons.Rounded.SkipNext, on, stringResource(R.string.next), { conn.next() }) { conn.seekBy(step) } }
+        Box(fade) {
+            IconTap(
+                if (conn.repeatMode == Player.REPEAT_MODE_ONE) Icons.Rounded.RepeatOne else Icons.Rounded.Repeat,
+                if (conn.repeatMode == Player.REPEAT_MODE_OFF) dim else on, 24.dp, label = stringResource(R.string.repeat),
+            ) { conn.cycleRepeat() }
+        }
+    }
+}
+
+/** A tap skips; holding jumps within the track, repeating while held. */
+@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
+@Composable
+private fun HoldButton(icon: androidx.compose.ui.graphics.vector.ImageVector, tint: Color, label: String, onTap: () -> Unit, onHold: () -> Unit) {
+    Box(
+        Modifier
+            .size(52.dp)
+            .clip(CircleShape)
+            .combinedClickable(onClick = onTap, onLongClick = onHold, onClickLabel = label),
+        contentAlignment = Alignment.Center,
+    ) { Icon(icon, label, tint = tint, modifier = Modifier.size(38.dp)) }
+}
+
+/**
+ * A layer whose block also gets the element's centre in the sheet's coordinates, measured where it
+ * is laid out, before its own transform, so the transform never feeds back into the measurement.
+ */
+private fun Modifier.graphicsLayerWithPlace(
+    sheet: () -> androidx.compose.ui.layout.LayoutCoordinates?,
+    block: androidx.compose.ui.graphics.GraphicsLayerScope.(Offset) -> Unit,
+): Modifier = composed {
+    val center = remember { mutableStateOf(Offset.Zero) }
+    this
+        .onPlaced { c ->
+            val s = sheet() ?: return@onPlaced
+            if (s.isAttached && c.isAttached) {
+                center.value = s.localPositionOf(c, Offset.Zero) + Offset(c.size.width / 2f, c.size.height / 2f)
+            }
+        }
+        .graphicsLayer { block(center.value) }
+}
 
 private class Geometry(
     val width: Float,
@@ -659,14 +747,34 @@ private class Geometry(
     val miniArtX: Float,
     val miniArtY: Float,
     val miniArtSize: Float,
+    /** Two columns: artwork and controls on the left, the queue on the right. */
+    val wide: Boolean,
+    val leftWidth: Float,
 )
 
 private fun lerp(a: Float, b: Float, t: Float) = a + (b - a) * t
 
-private fun geometry(density: Density, width: Float, height: Float, tabs: Dp): Geometry = with(density) {
+private fun geometry(density: Density, width: Float, height: Float, tabs: Dp, top: Dp): Geometry = with(density) {
     val miniHeight = 58.dp.toPx()
     val miniTop = height - tabs.toPx() - miniHeight - 4.dp.toPx()
     val margin = 8.dp.toPx()
+    val wide = width >= 600.dp.toPx()
+    if (wide) {
+        // The open player of a tablet: artwork with its controls on the left, the queue beside them.
+        val left = width * 0.5f
+        val artSize = min(left - 48.dp.toPx(), height - top.toPx() - 230.dp.toPx())
+        return@with Geometry(
+            width, height, miniTop, miniHeight, margin,
+            artX = (left - artSize) / 2,
+            artY = top.toPx() + 56.dp.toPx(),
+            artSize = artSize,
+            miniArtX = margin + 8.dp.toPx(),
+            miniArtY = 8.dp.toPx(),
+            miniArtSize = 42.dp.toPx(),
+            wide = true,
+            leftWidth = left,
+        )
+    }
     // The artwork spans the width, as in the classic player, unless the screen is too short for it.
     val artSize = min(width, height * 0.5f)
     Geometry(
@@ -677,6 +785,8 @@ private fun geometry(density: Density, width: Float, height: Float, tabs: Dp): G
         miniArtX = margin + 8.dp.toPx(),
         miniArtY = 8.dp.toPx(),
         miniArtSize = 42.dp.toPx(),
+        wide = false,
+        leftWidth = width,
     )
 }
 
@@ -698,8 +808,8 @@ fun CompactPlayer(vm: AppViewModel, tabsHeight: Dp, modifier: Modifier = Modifie
 
     var settle by remember { mutableStateOf<Job?>(null) }
     BoxWithConstraints(modifier.fillMaxSize()) {
-        val g = remember(constraints.maxWidth, constraints.maxHeight, tabsHeight) {
-            geometry(density, constraints.maxWidth.toFloat(), constraints.maxHeight.toFloat(), tabsHeight)
+        val g = remember(constraints.maxWidth, constraints.maxHeight, tabsHeight, systemTop) {
+            geometry(density, constraints.maxWidth.toFloat(), constraints.maxHeight.toFloat(), tabsHeight, systemTop)
         }
         fun settleTo(target: Float, velocity: Float = 0f) {
             settle?.cancel()
@@ -778,14 +888,16 @@ fun CompactPlayer(vm: AppViewModel, tabsHeight: Dp, modifier: Modifier = Modifie
             }
             // Controls under the artwork; both stay composed, so nothing is built while the finger moves.
             val controlsBottom = remember { mutableFloatStateOf(g.artSize + with(density) { 140.dp.toPx() }) }
+            var sheetCoords by remember { mutableStateOf<androidx.compose.ui.layout.LayoutCoordinates?>(null) }
+            Box(Modifier.fillMaxSize().onPlaced { sheetCoords = it })
             Column(
-                pageAlpha
-                    .fillMaxWidth()
-                    .padding(top = with(density) { (g.artY + g.artSize).toDp() } + 6.dp, start = 14.dp, end = 14.dp)
+                Modifier
+                    .width(with(density) { g.leftWidth.toDp() })
+                    .padding(top = with(density) { (g.artY + g.artSize).toDp() } + if (g.wide) 14.dp else 6.dp, start = if (g.wide) 32.dp else 14.dp, end = if (g.wide) 32.dp else 14.dp)
                     .onPlaced { controlsBottom.floatValue = g.artY + g.artSize + with(density) { 22.dp.toPx() } + it.size.height },
             ) {
-                SeekBar(position, conn, onCover)
-                Controls(conn, onCover, cover.target, big = 64.dp)
+                SeekBar(position, conn, onCover, pageAlpha)
+                MorphingControls(vm, conn, onCover, cover.target, g, { sheetCoords }, pageAlpha)
             }
 
             // Mini row.
@@ -798,17 +910,17 @@ fun CompactPlayer(vm: AppViewModel, tabsHeight: Dp, modifier: Modifier = Modifie
                         alpha = (1f - vm.sheet / 0.12f).coerceIn(0f, 1f)
                         translationY = if (visible) 0f else -100000f // out of reach of touches
                     }
+                    .padding(end = MINI_BUTTONS + 12.dp)
                     .clickable(interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }, indication = null) { settleTo(1f) }
-                    .padding(start = with(density) { (g.miniArtX + g.miniArtSize).toDp() } + 10.dp, end = 12.dp),
+                    .padding(start = with(density) { (g.miniArtX + g.miniArtSize).toDp() } + 10.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Column(Modifier.weight(1f)) {
                     Txt(track.title.trim(), Type.bodyBold, onCover)
                     Txt(track.artist, Type.small, onCover.copy(alpha = 0.8f))
                 }
-                IconTap(Icons.Rounded.SkipPrevious, onCover, 26.dp, 40.dp, label = stringResource(R.string.previous)) { conn.previous() }
-                PlayButton(conn, 38.dp, onCover, cover.target)
-                IconTap(Icons.Rounded.SkipNext, onCover, 26.dp, 40.dp, label = stringResource(R.string.next)) { conn.next() }
+                // Room for the three buttons, which arrive here from the full player.
+                Spacer(Modifier.width(MINI_BUTTONS))
             }
 
             // One artwork travels from the mini player to the top of the full page.
@@ -823,15 +935,15 @@ fun CompactPlayer(vm: AppViewModel, tabsHeight: Dp, modifier: Modifier = Modifie
                         transformOrigin = TransformOrigin(0f, 0f)
                         translationX = lerp(g.miniArtX, g.artX, f)
                         translationY = lerp(g.miniArtY, g.artY, f)
-                        shape = RoundedCornerShape(lerp(6f, 0f, f).dp * (1f / s.coerceAtLeast(0.05f)))
+                        shape = RoundedCornerShape(lerp(6f, if (g.wide) 16f else 0f, f).dp * (1f / s.coerceAtLeast(0.05f)))
                         clip = true
                     }
                     .pointerInput(Unit) {
                         detectTapGestures { if (vm.sheet < 0.5f) settleTo(1f) }
                     }
-                    .swipeForTrack(conn),
+                    .then(if (vm.prefs.swipeArtwork) Modifier.swipeForTrack(conn) else Modifier),
             ) {
-                ArtPager(conn, Modifier.fillMaxSize(), { vm.sheet > 0.98f }, 0.dp)
+                ArtPager(conn, Modifier.fillMaxSize(), { vm.sheet > 0.98f && vm.prefs.swipeArtwork }, 0.dp)
                 CoverLyricLine(vm, position, Modifier.align(Alignment.BottomCenter).graphicsLayer { alpha = ((vm.sheet - 0.7f) / 0.3f).coerceIn(0f, 1f) })
             }
 
@@ -845,9 +957,26 @@ fun CompactPlayer(vm: AppViewModel, tabsHeight: Dp, modifier: Modifier = Modifie
                 contentAlignment = Alignment.CenterStart,
             ) {
                 IconTap(Icons.Rounded.KeyboardArrowDown, Color.White, 30.dp, 48.dp, label = stringResource(R.string.back)) { settleTo(0f) }
+                Row(Modifier.align(Alignment.CenterEnd).padding(end = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+                    if (lyrics?.isEmpty == false) {
+                        IconTap(Icons.Rounded.Lyrics, Color.White, 24.dp, 48.dp, label = stringResource(R.string.lyrics)) { vm.lyricsOpen = true }
+                    }
+                    FavoriteHeart(vm, track.id, Color.White, 26.dp, 48.dp)
+                }
             }
 
-            QueueSheet(vm, g, controlsBottom, sheetScroll, pageAlpha)
+            if (g.wide) {
+                QueueCard(
+                    vm,
+                    conn,
+                    pageAlpha
+                        .fillMaxSize()
+                        .padding(start = with(density) { g.leftWidth.toDp() }, top = systemTop + 12.dp, end = 16.dp),
+                )
+            } else {
+                QueueSheet(vm, g, controlsBottom, sheetScroll, pageAlpha)
+            }
+            if (vm.lyricsOpen && vm.sheet > 0.5f) LyricsDialog(vm, track, { conn.positionMs }) { vm.lyricsOpen = false }
 
         }
 
@@ -933,8 +1062,9 @@ private fun QueueSheet(vm: AppViewModel, g: Geometry, restY: androidx.compose.ru
         }
     }
     val headerDrag = rememberDraggableState { delta -> vm.queueFull = (vm.queueFull - delta / travel()).coerceIn(0f, 1f) }
-    // Lowered again, or the player closed and reopened, the queue goes back to what plays next.
-    val lowered by remember { derivedStateOf { vm.queueFull == 0f && vm.sheet > 0.99f } }
+    // Reopened from the mini player, the queue goes back to the current track; lowering the card
+    // alone leaves it where the finger left it.
+    val lowered by remember { derivedStateOf { vm.sheet < 0.01f } }
     Box(
         pageAlpha
             .fillMaxSize()
@@ -942,6 +1072,7 @@ private fun QueueSheet(vm: AppViewModel, g: Geometry, restY: androidx.compose.ru
             .graphicsLayer { translationY = (1f - vm.queueFull) * travel() },
     ) {
         QueueCard(
+            vm,
             vm.connection,
             Modifier.fillMaxSize(),
             headerModifier = Modifier
@@ -1019,13 +1150,21 @@ fun PlayerPane(vm: AppViewModel, modifier: Modifier = Modifier) {
                 ) {
                     ArtPager(conn, Modifier.fillMaxSize(), { true }, 0.dp)
                     CoverLyricLine(vm, position, Modifier.align(Alignment.BottomCenter))
+                    if (lyrics?.isEmpty == false) {
+                        IconTap(
+                            Icons.Rounded.Lyrics, Color.White, 22.dp, 42.dp,
+                            Modifier.align(Alignment.TopEnd).padding(6.dp).clip(CircleShape).background(Color.Black.copy(alpha = 0.35f)),
+                            label = stringResource(R.string.lyrics),
+                        ) { vm.lyricsOpen = true }
+                    }
                 }
             }
             Column(Modifier.padding(horizontal = 12.dp, vertical = 4.dp)) {
                 SeekBar(position, conn, onCover)
                 Controls(conn, onCover, cover.target, big = 56.dp)
             }
-            QueueCard(conn, Modifier.fillMaxWidth().weight(1f).padding(horizontal = 10.dp))
+            QueueCard(vm, conn, Modifier.fillMaxWidth().weight(1f).padding(horizontal = 10.dp))
         }
+        if (vm.lyricsOpen && track != null) LyricsDialog(vm, track, { conn.positionMs }) { vm.lyricsOpen = false }
     }
 }

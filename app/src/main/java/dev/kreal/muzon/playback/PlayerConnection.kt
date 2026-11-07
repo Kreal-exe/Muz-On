@@ -59,8 +59,15 @@ class PlayerConnection(private val context: Context, private val prefs: Prefs, p
     val positionMs: Long get() = localPlayer()?.currentPosition ?: controller?.currentPosition ?: 0L
 
     private val listener = object : Player.Listener {
+        override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
+            if (reason != Player.MEDIA_ITEM_TRANSITION_REASON_PLAYLIST_CHANGED) mediaItem?.mediaId?.let(prefs::recordPlay)
+        }
+
         override fun onEvents(player: Player, events: Player.Events) {
             sync(player)
+            if (events.contains(Player.EVENT_SHUFFLE_MODE_ENABLED_CHANGED) || events.contains(Player.EVENT_REPEAT_MODE_CHANGED)) {
+                prefs.saveModes(player.shuffleModeEnabled, player.repeatMode)
+            }
             if (events.contains(Player.EVENT_MEDIA_ITEM_TRANSITION) || events.contains(Player.EVENT_IS_PLAYING_CHANGED)) {
                 prefs.savePosition(player.currentMediaItemIndex, player.currentPosition)
             }
@@ -131,6 +138,8 @@ class PlayerConnection(private val context: Context, private val prefs: Prefs, p
         if (tracks.isEmpty()) return
         queue = tracks
         c.setMediaItems(tracks.map(::toItem), index.coerceIn(0, tracks.lastIndex), position)
+        c.shuffleModeEnabled = prefs.savedShuffle()
+        c.repeatMode = prefs.savedRepeat()
         c.prepare()
         sync(c)
     }
@@ -214,6 +223,61 @@ class PlayerConnection(private val context: Context, private val prefs: Prefs, p
             if (c.playbackState == Player.STATE_ENDED) c.seekToDefaultPosition(0)
             if (c.playbackState == Player.STATE_IDLE) c.prepare()
             c.play()
+        }
+    }
+
+    /** Puts [track] right after the current one. */
+    fun playNext(track: Track) {
+        if (track.uri == null) return
+        withController { c ->
+            if (c.mediaItemCount == 0) {
+                play(listOf(track))
+            } else {
+                c.addMediaItem(c.currentMediaItemIndex + 1, toItem(track))
+                refresh()
+            }
+        }
+    }
+
+    fun playNext(tracks: List<Track>) {
+        val items = tracks.filter { it.uri != null }
+        if (items.isEmpty()) return
+        withController { c ->
+            if (c.mediaItemCount == 0) play(items) else {
+                c.addMediaItems(c.currentMediaItemIndex + 1, items.map(::toItem))
+                refresh()
+            }
+        }
+    }
+
+    fun addToQueue(tracks: List<Track>) {
+        val items = tracks.filter { it.uri != null }
+        if (items.isEmpty()) return
+        withController { c ->
+            if (c.mediaItemCount == 0) play(items) else {
+                c.addMediaItems(items.map(::toItem))
+                refresh()
+            }
+        }
+    }
+
+    fun seekBy(ms: Long) = withController { it.seekTo((it.currentPosition + ms).coerceAtLeast(0)) }
+
+    fun addToQueue(track: Track) {
+        if (track.uri == null) return
+        withController { c ->
+            if (c.mediaItemCount == 0) play(listOf(track)) else {
+                c.addMediaItem(toItem(track))
+                refresh()
+            }
+        }
+    }
+
+    fun removeWindow(window: Int) = withController { c ->
+        if (window in 0 until c.mediaItemCount && window != c.currentMediaItemIndex) {
+            c.removeMediaItem(window)
+            queue = queue.toMutableList().also { if (window < it.size) it.removeAt(window) }
+            refresh()
         }
     }
 

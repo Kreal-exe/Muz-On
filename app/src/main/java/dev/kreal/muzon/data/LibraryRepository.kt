@@ -42,6 +42,49 @@ class LibraryRepository(private val context: Context, private val prefs: Prefs) 
 
     private class DbFiles(val db: Uri, val stamp: String, val order: Uri?)
 
+    /** The library as read, before the hearts set on this phone are laid over it. */
+    private var base: Library? = null
+
+    /**
+     * Sets or clears the heart of [track]. The change shows at once, smart playlists that depend on
+     * it follow, and it is written down for the Mac, where tools/sync-library.sh applies it.
+     */
+    suspend fun setFavorite(track: Track, favorite: Boolean) = withContext(Dispatchers.Default) {
+        mutex.withLock {
+            val read = base ?: return@withLock
+            prefs.setFavoriteOverride(track.id, favorite.takeIf { it != read.byId[track.id]?.favorite })
+            writeFavoriteChanges(read)
+            state.value = withFavorites(read)
+        }
+    }
+
+    /** One line per pending change, "<persistent id> true|false", in the app's own folder. */
+    private fun writeFavoriteChanges(read: Library) {
+        val dir = context.getExternalFilesDir(null) ?: return
+        val lines = prefs.favoriteOverrides().filterKeys { read.byId.containsKey(it) }.map { (id, on) -> "$id $on" }
+        val file = File(dir, "favourites-changes.txt")
+        if (lines.isEmpty()) file.delete() else file.writeText(lines.joinToString("\n", postfix = "\n"))
+    }
+
+    private fun withFavorites(read: Library): Library {
+        val overrides = prefs.favoriteOverrides()
+        if (overrides.isEmpty()) return read
+        val tracks = read.tracks.map { t -> overrides[t.id]?.let { t.copy(favorite = it) } ?: t }
+        val byId = tracks.associateBy { it.id }
+        val changed = overrides.keys.filter { read.byId.containsKey(it) }.toSet()
+        val playlists = read.playlists.map { playlist ->
+            val rules = playlist.rules ?: return@map playlist
+            // Follows its rules only if they give exactly what the Mac listed for the library as read.
+            val trusted = runCatching { read.tracks.filter { SmartRules.evaluate(rules, it) }.map { it.id }.toSet() == playlist.trackIds.toSet() }
+                .getOrDefault(false)
+            if (!trusted) return@map playlist
+            val kept = playlist.trackIds.filter { id -> id !in changed || SmartRules.evaluate(rules, byId.getValue(id)) }
+            val added = changed.filter { id -> id !in playlist.trackIds && SmartRules.evaluate(rules, byId.getValue(id)) }
+            playlist.copy(trackIds = kept + added)
+        }
+        return Library(read.source, tracks, playlists, read.databaseTime, read.failure).also { it.prepare() }
+    }
+
     /** Reads again when the database changed or [force] is set; otherwise keeps what is loaded. */
     suspend fun refresh(force: Boolean = false) = withContext(Dispatchers.IO) {
         mutex.withLock {
@@ -61,7 +104,11 @@ class LibraryRepository(private val context: Context, private val prefs: Prefs) 
             }
             library.prepare()
             loadedStamp = stamp
-            state.value = library
+            base = library
+            // A heart the Mac already took over needs no override any more.
+            prefs.favoriteOverrides().forEach { (id, on) -> if (library.byId[id]?.favorite == on) prefs.setFavoriteOverride(id, null) }
+            writeFavoriteChanges(library)
+            state.value = withFavorites(library)
         }
     }
 

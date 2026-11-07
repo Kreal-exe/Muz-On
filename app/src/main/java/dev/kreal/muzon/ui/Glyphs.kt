@@ -5,6 +5,9 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.PlaylistPlay
 import androidx.compose.material.icons.rounded.Category
+import androidx.compose.material.icons.rounded.Folder
+import androidx.compose.material.icons.rounded.History
+import androidx.compose.material.icons.rounded.Whatshot
 import androidx.compose.material.icons.rounded.LibraryMusic
 import androidx.compose.material.icons.rounded.Mic
 import androidx.compose.material.icons.rounded.MusicNote
@@ -28,7 +31,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.Dp
 import dev.kreal.muzon.data.AppTheme
 
-enum class GlyphKind { Playlists, Artists, Albums, Songs, Recent, Genres, Search, Settings }
+enum class GlyphKind { Playlists, Artists, Albums, Songs, Recent, Genres, Search, Settings, History, MostPlayed, Folders }
 
 private fun GlyphKind.vector(): ImageVector = when (this) {
     GlyphKind.Playlists -> Icons.AutoMirrored.Rounded.PlaylistPlay
@@ -39,12 +42,15 @@ private fun GlyphKind.vector(): ImageVector = when (this) {
     GlyphKind.Genres -> Icons.Rounded.Category
     GlyphKind.Search -> Icons.Rounded.Search
     GlyphKind.Settings -> Icons.Rounded.Settings
+    GlyphKind.History -> Icons.Rounded.History
+    GlyphKind.MostPlayed -> Icons.Rounded.Whatshot
+    GlyphKind.Folders -> Icons.Rounded.Folder
 }
 
 /** The poster theme draws a plain symbol; the other two draw the same subject with tone and depth. */
 @Composable
 fun Glyph(kind: GlyphKind, size: Dp, tint: Color, modifier: Modifier = Modifier) {
-    if (LocalAppTheme.current == AppTheme.Poster) {
+    if (LocalAppTheme.current == AppTheme.Poster || kind == GlyphKind.History || kind == GlyphKind.MostPlayed || kind == GlyphKind.Folders) {
         Icon(kind.vector(), null, tint = tint, modifier = modifier.size(size))
     } else {
         Canvas(modifier.size(size)) { drawDetailed(kind, tint) }
@@ -115,6 +121,7 @@ private fun DrawScope.drawDetailed(kind: GlyphKind, tint: Color) {
             drawCircle(metal, 7.6f * u, Offset(10 * u, 10 * u), style = Stroke(2.2f * u))
             drawOval(Color.White.copy(alpha = 0.85f), Offset(6.2f * u, 5.6f * u), Size(4.2f * u, 2.2f * u))
         }
+        GlyphKind.History, GlyphKind.MostPlayed, GlyphKind.Folders -> Unit
         GlyphKind.Settings -> {
             for (i in 0 until 8) {
                 val a = Math.toRadians(i * 45.0)

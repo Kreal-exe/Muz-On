@@ -31,14 +31,29 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         get() = queueFullState.floatValue
         set(v) { queueFullState.floatValue = v }
 
+    /** Tracks of the artist or playlist whose row was held; the menu shows while set. */
+    var collectionMenu by mutableStateOf<List<dev.kreal.muzon.data.Track>?>(null)
+
     var isWide by mutableStateOf(false)
     var lyricsOpen by mutableStateOf(false)
+
+    /** Opens a screen from anywhere, the player included, which closes to show it. */
+    fun goTo(route: Route) {
+        sheet = 0f
+        queueFull = 0f
+        nav.push(route)
+    }
 
     fun refreshLibrary(force: Boolean = false) {
         viewModelScope.launch {
             repository.refresh(force)
             repository.library.value?.let(connection::onLibrary)
         }
+    }
+
+    fun toggleFavorite(id: String) {
+        val track = repository.library.value?.byId?.get(id) ?: return
+        viewModelScope.launch { repository.setFavorite(track, !track.favorite) }
     }
 
     fun applySkipSilence(on: Boolean) {
