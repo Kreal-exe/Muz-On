@@ -1,6 +1,7 @@
 package dev.kreal.muzon.ui
 
 import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.togetherWith
 import androidx.compose.animation.core.animate
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
@@ -41,6 +42,7 @@ import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.KeyboardArrowDown
 import androidx.compose.material.icons.rounded.Lyrics
 import androidx.compose.material.icons.rounded.Pause
 import androidx.compose.material.icons.rounded.PlayArrow
@@ -219,11 +221,13 @@ private fun ArtPager(conn: PlayerConnection, modifier: Modifier, swipeEnabled: (
 private fun SeekBar(position: Position, conn: PlayerConnection, on: Color, modifier: Modifier = Modifier) {
     val theme = LocalAppTheme.current
     val duration = conn.durationMs.coerceAtLeast(1L)
-    Column(modifier) {
+    Row(modifier, verticalAlignment = Alignment.CenterVertically) {
+        Elapsed(position, on)
         Box(
             Modifier
-                .fillMaxWidth()
-                .height(26.dp)
+                .weight(1f)
+                .padding(horizontal = 10.dp)
+                .height(30.dp)
                 .pointerInput(duration) {
                     detectTapGestures { offset ->
                         val ms = (offset.x / size.width * duration).toLong().coerceIn(0, duration)
@@ -265,16 +269,20 @@ private fun SeekBar(position: Position, conn: PlayerConnection, on: Color, modif
                     }
                 },
         )
-        TimeLabels(position, conn, on)
+        Remaining(position, conn, on)
     }
 }
 
 @Composable
-private fun TimeLabels(position: Position, conn: PlayerConnection, on: Color) {
+private fun Elapsed(position: Position, on: Color) {
     val seconds by remember { derivedStateOf { (position.scrubbing.value ?: position.value.longValue) / 1000 } }
-    Row(Modifier.fillMaxWidth()) {
-        Txt(formatTime(seconds * 1000), Type.tiny, on)
-        Spacer(Modifier.weight(1f))
+    Txt(formatTime(seconds * 1000), Type.tiny, on, Modifier.width(40.dp))
+}
+
+@Composable
+private fun Remaining(position: Position, conn: PlayerConnection, on: Color) {
+    val seconds by remember { derivedStateOf { (position.scrubbing.value ?: position.value.longValue) / 1000 } }
+    Box(Modifier.width(44.dp), contentAlignment = Alignment.CenterEnd) {
         Txt("−" + formatTime((conn.durationMs - seconds * 1000).coerceAtLeast(0)), Type.tiny, on)
     }
 }
@@ -354,39 +362,84 @@ private fun Modifier.swipeForTrack(conn: PlayerConnection): Modifier = pointerIn
     )
 }
 
-// ---- Lyrics and queue
+// ---- Lyrics
 
+private fun lyricSize(size: LyricsSize, big: Boolean) = when (size) {
+    LyricsSize.Small -> if (big) 18.sp else 16.sp
+    LyricsSize.Medium -> if (big) 22.sp else 19.sp
+    LyricsSize.Large -> if (big) 26.sp else 23.sp
+}
+
+private fun lyricStyle(size: androidx.compose.ui.unit.TextUnit) = Type.bodyBold.copy(
+    fontWeight = androidx.compose.ui.text.font.FontWeight(700),
+    fontSize = size,
+    lineHeight = size * 1.22f,
+    textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+    shadow = androidx.compose.ui.graphics.Shadow(Color.Black, Offset(0f, 1f), 8f),
+)
+
+/**
+ * The current line at the bottom of the artwork, over a shade, the next one sliding in from below.
+ * Tracks without timed lyrics show only their artwork.
+ */
 @Composable
-private fun LyricsPanel(vm: AppViewModel, position: Position, on: Color, modifier: Modifier = Modifier, compact: Boolean = false) {
+private fun CoverLyricLine(vm: AppViewModel, position: Position, modifier: Modifier) {
+    val track = vm.connection.current
+    val lyrics by produceState<Lyrics?>(null, track?.id) { value = track?.let { LyricsReader.read(it) } }
+    val timed = lyrics?.timed.orEmpty()
+    if (timed.isEmpty()) return
+    val lead = vm.prefs.lyricsLeadMs
+    val index by remember(timed, lead) { derivedStateOf { activeLine(timed, position.value.longValue + lead) } }
+    val style = lyricStyle(lyricSize(vm.prefs.lyricsSize, big = true))
+    Box(
+        modifier
+            .fillMaxWidth()
+            .drawBehind { drawRect(Brush.verticalGradient(0f to Color.Transparent, 1f to Color.Black.copy(alpha = 0.62f))) }
+            .padding(start = 16.dp, end = 16.dp, top = 40.dp, bottom = 16.dp),
+        contentAlignment = Alignment.BottomCenter,
+    ) {
+        androidx.compose.animation.AnimatedContent(
+            targetState = index,
+            transitionSpec = {
+                (androidx.compose.animation.slideInVertically(tween(260)) { it / 2 } + androidx.compose.animation.fadeIn(tween(260)))
+                    .togetherWith(androidx.compose.animation.slideOutVertically(tween(260)) { -it / 2 } + androidx.compose.animation.fadeOut(tween(200)))
+                    .using(androidx.compose.animation.SizeTransform(clip = false))
+            },
+            label = "line",
+        ) { i ->
+            androidx.compose.material3.Text(timed.getOrNull(i)?.text.orEmpty(), style = style, color = Color.White, maxLines = 3, modifier = Modifier.fillMaxWidth())
+        }
+    }
+}
+
+/** All the lyrics, opened by tapping the artwork; a tap on a timed line jumps to it. */
+@Composable
+private fun FullLyrics(vm: AppViewModel, position: Position, modifier: Modifier) {
     val conn = vm.connection
     val track = conn.current
-    val lyrics by produceState<Lyrics?>(null, track?.id) {
-        value = null
-        value = track?.let { LyricsReader.read(it) }
-    }
+    val lyrics by produceState<Lyrics?>(null, track?.id) { value = track?.let { LyricsReader.read(it) } }
     val view = LocalView.current
-    // Only while the text is really on screen, not behind a collapsed player.
-    val onScreen by remember { derivedStateOf { compact && (vm.sheet > 0.5f || vm.isWide) } }
-    val keep = vm.prefs.keepScreenForLyrics && onScreen
+    val keep = vm.prefs.keepScreenForLyrics
     DisposableEffect(keep) {
         view.keepScreenOn = keep
         onDispose { view.keepScreenOn = false }
     }
-    val size = when (vm.prefs.lyricsSize) {
-        LyricsSize.Small -> 15.sp
-        LyricsSize.Medium -> 17.sp
-        LyricsSize.Large -> 20.sp
-    }
-    val style = Type.bodyBold.copy(
-        fontWeight = androidx.compose.ui.text.font.FontWeight(700),
-        fontSize = size,
-        lineHeight = size * 1.25f,
-        textAlign = androidx.compose.ui.text.style.TextAlign.Center,
-        shadow = androidx.compose.ui.graphics.Shadow(Color.Black.copy(alpha = 0.7f), Offset(0f, 1f), 6f),
-    )
-    val current = lyrics
-    Box(modifier.fillMaxWidth()) {
-        if (current != null && !current.isEmpty) LyricsList(current, position, conn, on, style, vm.prefs.lyricsLeadMs)
+    val style = lyricStyle(lyricSize(vm.prefs.lyricsSize, big = false))
+    val systemTop = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
+    val systemBottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
+    Box(
+        modifier
+            .fillMaxSize()
+            .background(Color.Black.copy(alpha = 0.9f))
+            .clickable(interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }, indication = null) { vm.lyricsOpen = false }
+            .padding(top = systemTop + 8.dp, bottom = systemBottom + 8.dp, start = 16.dp, end = 16.dp),
+    ) {
+        val current = lyrics
+        when {
+            current == null -> Unit
+            current.isEmpty -> Txt(stringResource(R.string.no_lyrics), Type.body, Color.White.copy(alpha = 0.7f), Modifier.align(Alignment.Center))
+            else -> LyricsList(current, position, conn, Color.White, style, vm.prefs.lyricsLeadMs)
+        }
     }
 }
 
@@ -397,9 +450,7 @@ private fun LyricsList(lyrics: Lyrics, position: Position, conn: PlayerConnectio
     val active by remember(timed, leadMs) { derivedStateOf { activeLine(timed, position.value.longValue + leadMs) } }
     var lastTouch by remember { mutableLongStateOf(0L) }
     LaunchedEffect(active) {
-        if (active >= 0 && System.currentTimeMillis() - lastTouch > 3000) {
-            state.animateScrollToItem((active - 1).coerceAtLeast(0))
-        }
+        if (active >= 0 && System.currentTimeMillis() - lastTouch > 3000) state.animateScrollToItem((active - 3).coerceAtLeast(0))
     }
     LazyColumn(
         state = state,
@@ -412,7 +463,7 @@ private fun LyricsList(lyrics: Lyrics, position: Position, conn: PlayerConnectio
                 }
             }
         },
-        contentPadding = PaddingValues(bottom = 80.dp),
+        contentPadding = PaddingValues(vertical = 40.dp),
     ) {
         itemsIndexed(timed, key = { i, _ -> i }, contentType = { _, _ -> 0 }) { i, line ->
             LyricRow(line, i == active, on, style) {
@@ -421,9 +472,10 @@ private fun LyricsList(lyrics: Lyrics, position: Position, conn: PlayerConnectio
                 lastTouch = 0L
             }
         }
-        if (timed.isEmpty()) {
+        if (lyrics.plain.isNotEmpty()) {
+            if (timed.isNotEmpty()) item { Spacer(Modifier.height(28.dp)) }
             itemsIndexed(lyrics.plain, key = { i, _ -> "p$i" }, contentType = { _, _ -> 1 }) { _, line ->
-                androidx.compose.material3.Text(line, style = style, color = on, modifier = Modifier.fillMaxWidth().padding(vertical = 5.dp))
+                androidx.compose.material3.Text(line, style = style, color = on.copy(alpha = if (timed.isEmpty()) 1f else 0.6f), modifier = Modifier.fillMaxWidth().padding(vertical = 5.dp))
             }
         }
     }
@@ -439,34 +491,53 @@ private fun LyricRow(line: LyricLine, active: Boolean, on: Color, style: android
         modifier = Modifier
             .fillMaxWidth()
             .graphicsLayer {
-                alpha = 0.5f + 0.5f * shown
-                val scale = 0.92f + 0.08f * shown
+                alpha = 0.45f + 0.55f * shown
+                val scale = 0.94f + 0.06f * shown
                 scaleX = scale
                 scaleY = scale
             }
             .clip(RoundedCornerShape(8.dp))
             .clickable(onClick = onTap)
-            .padding(vertical = 5.dp),
+            .padding(vertical = 6.dp),
     )
 }
 
+private fun activeLine(timed: List<LyricLine>, now: Long): Int {
+    var low = 0
+    var high = timed.lastIndex
+    var found = -1
+    while (low <= high) {
+        val mid = (low + high) / 2
+        if (timed[mid].timeMs <= now) {
+            found = mid
+            low = mid + 1
+        } else {
+            high = mid - 1
+        }
+    }
+    return found
+}
+
+// ---- Queue card
+
 /**
- * The queue in play order, opening on what plays next; what already played is above, one scroll up,
- * dimmed, with the current track marked. Each new track puts the list back on what comes next.
+ * The card of the classic player: the current track on top, "Up next" with the time left, then the
+ * queue. The list opens on what plays next; what already played is above it, dimmed.
  */
 @Composable
-private fun QueuePanel(
+private fun QueueCard(
     conn: PlayerConnection,
-    on: Color,
     modifier: Modifier = Modifier,
     headerModifier: Modifier = Modifier,
     listModifier: Modifier = Modifier,
     extraBottom: Dp = 0.dp,
     resetKey: Any? = null,
 ) {
+    val p = LocalPalette.current
     val order = conn.playOrder
     val queue = conn.queue
     val position = conn.playOrderPosition
+    val current = conn.current
     val systemBottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
     val state = rememberLazyListState(initialFirstVisibleItemIndex = position + 1)
     LaunchedEffect(position, order, resetKey) {
@@ -479,10 +550,21 @@ private fun QueuePanel(
         for (i in position + 1 until order.size) sum += queue.getOrNull(order[i])?.durationMs ?: 0L
         sum
     }
-    Column(modifier.fillMaxWidth()) {
-        Row(headerModifier.fillMaxWidth().padding(start = 6.dp, end = 6.dp, top = 8.dp, bottom = 5.dp), verticalAlignment = Alignment.CenterVertically) {
-            Txt(stringResource(R.string.up_next), Type.tile, on, Modifier.weight(1f))
-            Txt(formatLong(leftMs), Type.tiny, on.copy(alpha = 0.75f))
+    Column(modifier.fillMaxWidth().clip(RoundedCornerShape(topStart = 14.dp, topEnd = 14.dp)).background(p.surface)) {
+        Column(headerModifier.fillMaxWidth()) {
+            if (current != null) {
+                Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+                    TrackArt(current, Modifier.size(48.dp), Radius6)
+                    Spacer(Modifier.width(12.dp))
+                    Column(Modifier.weight(1f)) {
+                        Txt(current.title.trim(), Type.bodyBold, p.text, maxLines = 2)
+                        Txt(listOfNotNull(current.artist, current.album.takeIf { it.isNotBlank() }).joinToString(" · "), Type.small, p.muted)
+                    }
+                }
+            }
+            Row(Modifier.fillMaxWidth().height(36.dp).padding(horizontal = 14.dp), verticalAlignment = Alignment.CenterVertically) {
+                Txt(stringResource(R.string.up_next) + " · " + formatLong(leftMs), Type.small.copy(fontWeight = androidx.compose.ui.text.font.FontWeight(600)), p.muted)
+            }
         }
         LazyColumn(
             state = state,
@@ -491,32 +573,36 @@ private fun QueuePanel(
         ) {
             itemsIndexed(order, key = { _, window -> window }, contentType = { _, _ -> 0 }) { index, window ->
                 val track = queue.getOrNull(window) ?: return@itemsIndexed
-                QueueRow(track, on, highlighted = index == position, dimmed = index < position) { conn.seekToWindow(window) }
+                QueueRow(track, index - position, dimmed = index <= position) { conn.seekToWindow(window) }
             }
         }
     }
 }
 
+/** A queue row; [offset] is how far it is from the current track, as the classic player numbers it. */
 @Composable
-private fun QueueRow(track: Track, on: Color, highlighted: Boolean, dimmed: Boolean, onClick: () -> Unit) {
+private fun QueueRow(track: Track, offset: Int, dimmed: Boolean, onClick: () -> Unit) {
+    val p = LocalPalette.current
     Row(
         Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(10.dp))
-            .then(if (highlighted) Modifier.background(on.copy(alpha = 0.16f)) else Modifier)
             .clickable(onClick = onClick)
-            .padding(horizontal = 6.dp, vertical = 4.dp)
+            .padding(horizontal = 12.dp, vertical = 6.dp)
             .graphicsLayer { alpha = if (dimmed) 0.5f else 1f },
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        TrackArt(track, Modifier.size(40.dp), Radius6)
-        Spacer(Modifier.width(10.dp))
-        Column(Modifier.weight(1f)) {
-            Txt(track.title.trim(), if (highlighted) Type.bodyBold else Type.body, on, maxLines = 3)
-            Txt(track.artist, Type.small, on.copy(alpha = 0.7f))
+        Box(Modifier.width(30.dp), contentAlignment = Alignment.Center) {
+            Txt(if (offset > 0) "+$offset" else offset.toString(), Type.tiny, p.muted)
         }
         Spacer(Modifier.width(6.dp))
-        Txt(formatTime(track.durationMs), Type.tiny, on.copy(alpha = 0.7f))
+        TrackArt(track, Modifier.size(42.dp), Radius6)
+        Spacer(Modifier.width(12.dp))
+        Column(Modifier.weight(1f)) {
+            Txt(track.title.trim(), Type.body, p.text, maxLines = 3)
+            Txt(track.artist, Type.small, p.muted)
+        }
+        Spacer(Modifier.width(6.dp))
+        Txt(formatTime(track.durationMs), Type.tiny, p.muted)
     }
 }
 
@@ -534,10 +620,26 @@ private class Geometry(
     val miniArtX: Float,
     val miniArtY: Float,
     val miniArtSize: Float,
-    val textY: Float,
 )
 
 private fun lerp(a: Float, b: Float, t: Float) = a + (b - a) * t
+
+private fun geometry(density: Density, width: Float, height: Float, tabs: Dp): Geometry = with(density) {
+    val miniHeight = 58.dp.toPx()
+    val miniTop = height - tabs.toPx() - miniHeight - 4.dp.toPx()
+    val margin = 8.dp.toPx()
+    // The artwork spans the width, as in the classic player, unless the screen is too short for it.
+    val artSize = min(width, height * 0.5f)
+    Geometry(
+        width, height, miniTop, miniHeight, margin,
+        artX = (width - artSize) / 2,
+        artY = 0f,
+        artSize = artSize,
+        miniArtX = margin + 8.dp.toPx(),
+        miniArtY = 8.dp.toPx(),
+        miniArtSize = 42.dp.toPx(),
+    )
+}
 
 @Composable
 fun CompactPlayer(vm: AppViewModel, tabsHeight: Dp, modifier: Modifier = Modifier) {
@@ -547,7 +649,6 @@ fun CompactPlayer(vm: AppViewModel, tabsHeight: Dp, modifier: Modifier = Modifie
     val density = LocalDensity.current
     val scope = rememberCoroutineScope()
     val systemTop = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
-    val systemBottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
     val cover = coverColor(track, vm.prefs.coverColor, p.surfaceHigh)
     val onCover = Blocks.on(cover.target)
     val position = rememberPosition(conn)
@@ -555,18 +656,19 @@ fun CompactPlayer(vm: AppViewModel, tabsHeight: Dp, modifier: Modifier = Modifie
 
     var settle by remember { mutableStateOf<Job?>(null) }
     BoxWithConstraints(modifier.fillMaxSize()) {
-        val g = remember(constraints.maxWidth, constraints.maxHeight, tabsHeight, systemTop, systemBottom) {
-            geometry(density, constraints.maxWidth.toFloat(), constraints.maxHeight.toFloat(), tabsHeight, systemTop)
+        val g = remember(constraints.maxWidth, constraints.maxHeight, tabsHeight) {
+            geometry(density, constraints.maxWidth.toFloat(), constraints.maxHeight.toFloat(), tabsHeight)
         }
         fun settleTo(target: Float, velocity: Float = 0f) {
             settle?.cancel()
             settle = scope.launch {
                 // A hard flick should not cross the screen in a few frames.
                 animate(vm.sheet, target, velocity.coerceIn(-2.5f, 2.5f), sheetSpring) { v, _ -> vm.sheet = v.coerceIn(0f, 1f) }
+                if (target == 0f) vm.queueFull = 0f
             }
         }
         val dragState = rememberDraggableState { delta -> vm.sheet = (vm.sheet - delta / g.miniTop).coerceIn(0f, 1f) }
-        val nested = remember(g) {
+        val sheetScroll = remember(g) {
             object : NestedScrollConnection {
                 override fun onPreScroll(available: Offset, source: NestedScrollSource): Offset {
                     if (available.y < 0 && vm.sheet < 1f) {
@@ -600,9 +702,7 @@ fun CompactPlayer(vm: AppViewModel, tabsHeight: Dp, modifier: Modifier = Modifie
             Modifier
                 .fillMaxSize()
                 .preferredFrameRate(FrameRateCategory.High)
-                .graphicsLayer {
-                    translationY = (1f - vm.sheet) * g.miniTop
-                }
+                .graphicsLayer { translationY = (1f - vm.sheet) * g.miniTop }
                 .drawBehind {
                     val f = vm.sheet
                     val inset = lerp(g.miniMargin, 0f, f)
@@ -628,9 +728,23 @@ fun CompactPlayer(vm: AppViewModel, tabsHeight: Dp, modifier: Modifier = Modifie
                     },
                 ),
         ) {
-            // Both stay composed: nothing is built or thrown away while the finger moves.
-            FullPageBody(vm, g, position, cover.target, onCover, nested, { settleTo(0f) }, Modifier.graphicsLayer { alpha = ((vm.sheet - 0.35f) / 0.25f).coerceIn(0f, 1f) })
+            val pageAlpha = Modifier.graphicsLayer {
+                alpha = ((vm.sheet - 0.35f) / 0.25f).coerceIn(0f, 1f)
+                translationY = if (vm.sheet > 0.05f) 0f else -100000f
+            }
+            // Controls under the artwork; both stay composed, so nothing is built while the finger moves.
+            val controlsBottom = remember { mutableFloatStateOf(g.artSize + with(density) { 140.dp.toPx() }) }
+            Column(
+                pageAlpha
+                    .fillMaxWidth()
+                    .padding(top = with(density) { (g.artY + g.artSize).toDp() } + 6.dp, start = 14.dp, end = 14.dp)
+                    .onPlaced { controlsBottom.floatValue = g.artY + g.artSize + with(density) { 6.dp.toPx() } + it.size.height },
+            ) {
+                SeekBar(position, conn, onCover)
+                Controls(conn, onCover, cover.target, big = 64.dp)
+            }
 
+            // Mini row.
             Row(
                 Modifier
                     .fillMaxWidth()
@@ -653,7 +767,7 @@ fun CompactPlayer(vm: AppViewModel, tabsHeight: Dp, modifier: Modifier = Modifie
                 IconTap(Icons.Rounded.SkipNext, onCover, 26.dp, 40.dp, label = stringResource(R.string.next)) { conn.next() }
             }
 
-            // One artwork travels from the mini player to the full page, lyrics on top of it.
+            // One artwork travels from the mini player to the top of the full page.
             Box(
                 Modifier
                     .size(with(density) { g.artSize.toDp() })
@@ -664,29 +778,34 @@ fun CompactPlayer(vm: AppViewModel, tabsHeight: Dp, modifier: Modifier = Modifie
                         scaleY = s
                         transformOrigin = TransformOrigin(0f, 0f)
                         translationX = lerp(g.miniArtX, g.artX, f)
-                        // The queue rises from below; the artwork gives way as it comes over.
-                        val q = vm.queueFull
-                        alpha = 1f - q
-                        translationY = if (q > 0.9f) -100000f else lerp(g.miniArtY, g.artY, f)
+                        translationY = lerp(g.miniArtY, g.artY, f)
+                        shape = RoundedCornerShape(lerp(6f, 0f, f).dp * (1f / s.coerceAtLeast(0.05f)))
+                        clip = true
                     }
                     .pointerInput(Unit) {
-                        detectTapGestures { if (vm.sheet < 0.5f) settleTo(1f) else vm.lyricsOpen = !vm.lyricsOpen }
+                        detectTapGestures { if (vm.sheet < 0.5f) settleTo(1f) else vm.lyricsOpen = true }
                     }
                     .swipeForTrack(conn),
             ) {
-                ArtPager(conn, Modifier.fillMaxSize(), { vm.sheet > 0.98f })
-                LyricsOverlay(
-                    vm,
-                    position,
-                    nested,
-                    Modifier
-                        .fillMaxSize()
-                        .graphicsLayer {
-                            alpha = ((vm.sheet - 0.7f) / 0.3f).coerceIn(0f, 1f)
-                            translationY = if (vm.sheet > 0.7f) 0f else -100000f
-                        },
-                )
+                ArtPager(conn, Modifier.fillMaxSize(), { vm.sheet > 0.98f }, 0.dp)
+                CoverLyricLine(vm, position, Modifier.align(Alignment.BottomCenter).graphicsLayer { alpha = ((vm.sheet - 0.7f) / 0.3f).coerceIn(0f, 1f) })
             }
+
+            // Toolbar over the artwork: the way back down.
+            Box(
+                pageAlpha
+                    .fillMaxWidth()
+                    .height(systemTop + 52.dp)
+                    .drawBehind { drawRect(Brush.verticalGradient(0f to Color.Black.copy(alpha = 0.45f), 1f to Color.Transparent)) }
+                    .padding(top = systemTop, start = 4.dp),
+                contentAlignment = Alignment.CenterStart,
+            ) {
+                IconTap(Icons.Rounded.KeyboardArrowDown, Color.White, 30.dp, 48.dp, label = stringResource(R.string.back)) { settleTo(0f) }
+            }
+
+            QueueSheet(vm, g, controlsBottom, sheetScroll, pageAlpha)
+
+            if (vm.lyricsOpen && vm.sheet > 0.5f) FullLyrics(vm, position, Modifier.fillMaxSize())
         }
 
         if (vm.prefs.lyricPopup) {
@@ -711,137 +830,23 @@ fun CompactPlayer(vm: AppViewModel, tabsHeight: Dp, modifier: Modifier = Modifie
     }
 }
 
-/** The current line, floating over the mini player. Absent when the track has no timed lyrics. */
-@Composable
-private fun LyricPopup(
-    leadMs: Int,
-    lyrics: Lyrics?,
-    position: Position,
-    fill: androidx.compose.runtime.State<Color>,
-    on: Color,
-    modifier: Modifier,
-    onClick: () -> Unit,
-) {
-    val timed = lyrics?.timed.orEmpty()
-    val line by remember(timed, leadMs) { derivedStateOf { timed.getOrNull(activeLine(timed, position.value.longValue + leadMs))?.text } }
-    val shown = line ?: return
-    // Anchored at the bottom: a long line grows upward, away from the mini player.
-    Box(modifier.padding(horizontal = 14.dp), contentAlignment = Alignment.BottomStart) {
-        Box(
-            Modifier
-                .clip(RoundedCornerShape(12.dp))
-                .drawBehind { drawRect(fill.value) }
-                .clickable(onClick = onClick)
-                .padding(horizontal = 12.dp, vertical = 6.dp),
-        ) {
-            androidx.compose.animation.Crossfade(shown, animationSpec = tween(180), label = "line") { text ->
-                Txt(text, Type.small.copy(fontWeight = androidx.compose.ui.text.font.FontWeight(600)), on, maxLines = 4)
-            }
-        }
-    }
-}
-
-private fun activeLine(timed: List<LyricLine>, now: Long): Int {
-    var low = 0
-    var high = timed.lastIndex
-    var found = -1
-    while (low <= high) {
-        val mid = (low + high) / 2
-        if (timed[mid].timeMs <= now) {
-            found = mid
-            low = mid + 1
-        } else {
-            high = mid - 1
-        }
-    }
-    return found
-}
-
-private fun geometry(density: Density, width: Float, height: Float, tabs: Dp, top: Dp): Geometry = with(density) {
-    val miniHeight = 58.dp.toPx()
-    val miniTop = height - tabs.toPx() - miniHeight - 4.dp.toPx()
-    val margin = 8.dp.toPx()
-    val pad = 22.dp.toPx()
-    val grabber = top.toPx() + 26.dp.toPx()
-    val artSize = min(width - pad * 2, height * 0.40f)
-    Geometry(
-        width, height, miniTop, miniHeight, margin,
-        artX = (width - artSize) / 2,
-        artY = grabber,
-        artSize = artSize,
-        miniArtX = margin + 8.dp.toPx(),
-        miniArtY = 8.dp.toPx(),
-        miniArtSize = 42.dp.toPx(),
-        textY = grabber + artSize + 14.dp.toPx(),
-    )
-}
-
 /**
- * Lyrics over the lower part of the artwork, which keeps the picture visible above them. A tap on
- * the artwork hides or shows them. A track without lyrics shows just its artwork.
+ * The queue card rests under the controls and is pulled up over the artwork. A finger going up first
+ * raises it, then scrolls it; going down scrolls back to what already played, then lowers the card,
+ * then lowers the player.
  */
 @Composable
-private fun LyricsOverlay(vm: AppViewModel, position: Position, nested: NestedScrollConnection?, modifier: Modifier) {
-    val open = vm.lyricsOpen
-    val shown by animateFloatAsState(if (open) 1f else 0f, tween(180), label = "lyrics")
-    val track = vm.connection.current
-    val lyrics by produceState<Lyrics?>(null, track?.id) { value = track?.let { LyricsReader.read(it) } }
-    if ((!open && shown == 0f) || lyrics?.isEmpty != false) return
-    Box(
-        modifier
-            .graphicsLayer { alpha = shown }
-            .clip(RoundedCornerShape(16.dp))
-            .drawBehind {
-                drawRect(
-                    Brush.verticalGradient(
-                        0f to Color.Transparent,
-                        0.32f to Color.Black.copy(alpha = 0.35f),
-                        0.62f to Color.Black.copy(alpha = 0.72f),
-                        1f to Color.Black.copy(alpha = 0.82f),
-                    ),
-                )
-            },
-        contentAlignment = Alignment.BottomCenter,
-    ) {
-        Box(
-            Modifier
-                .fillMaxWidth()
-                .fillMaxHeight(0.6f)
-                .then(if (nested != null) Modifier.nestedScroll(nested) else Modifier)
-                .padding(horizontal = 12.dp),
-        ) {
-            LyricsPanel(vm, position, Color.White, Modifier.fillMaxSize(), compact = true)
-        }
-    }
-}
-
-@Composable
-private fun FullPageBody(
-    vm: AppViewModel,
-    g: Geometry,
-    position: Position,
-    cover: Color,
-    onCover: Color,
-    sheetScroll: NestedScrollConnection,
-    onCollapse: () -> Unit,
-    modifier: Modifier,
-) {
-    val conn = vm.connection
-    val track = conn.current
+private fun QueueSheet(vm: AppViewModel, g: Geometry, restY: androidx.compose.runtime.MutableFloatState, sheetScroll: NestedScrollConnection, pageAlpha: Modifier) {
     val density = LocalDensity.current
     val scope = rememberCoroutineScope()
     val systemTop = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
-    val topPx = with(density) { systemTop.toPx() }
-    // Where the queue rests, under the controls; it can be pulled up to just under the status bar.
-    val restY = remember { mutableFloatStateOf(g.height * 0.7f) }
+    val topPx = with(density) { (systemTop + 8.dp).toPx() }
     val travel = { (restY.floatValue - topPx).coerceAtLeast(1f) }
     fun settleQueue(target: Float, velocity: Float = 0f) {
         scope.launch {
             animate(vm.queueFull, target, velocity.coerceIn(-2.5f, 2.5f), sheetSpring) { v, _ -> vm.queueFull = v.coerceIn(0f, 1f) }
         }
     }
-    // A finger going up first raises the queue, then scrolls it. Going down scrolls to what already
-    // played, then lowers the queue, then lowers the player.
     val queueScroll = remember(sheetScroll) {
         object : NestedScrollConnection {
             override fun onPreScroll(available: Offset, source: NestedScrollSource): Offset {
@@ -876,71 +881,64 @@ private fun FullPageBody(
             }
         }
     }
+    val headerDrag = rememberDraggableState { delta -> vm.queueFull = (vm.queueFull - delta / travel()).coerceIn(0f, 1f) }
     // Lowered again, the queue goes back to what plays next.
     val lowered by remember { derivedStateOf { vm.queueFull == 0f } }
-    val headerDrag = rememberDraggableState { delta -> vm.queueFull = (vm.queueFull - delta / travel()).coerceIn(0f, 1f) }
-    Box(modifier.fillMaxSize()) {
-        // The whole band above the artwork collapses the player, not just the thin bar.
-        Box(
-            Modifier
-                .fillMaxWidth()
-                .height(with(density) { g.artY.toDp() })
-                .clickable(interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }, indication = null, onClick = onCollapse),
-            contentAlignment = Alignment.TopCenter,
-        ) {
-            Box(
-                Modifier
-                    .padding(top = systemTop + 9.dp)
-                    .size(38.dp, 5.dp)
-                    .clip(CircleShape)
-                    .background(onCover.copy(alpha = 0.45f)),
-            )
-        }
-        Column(
-            Modifier
-                .fillMaxWidth()
-                .padding(top = with(density) { g.textY.toDp() }, start = 22.dp, end = 22.dp)
-                .onPlaced { restY.floatValue = g.textY + it.size.height },
-        ) {
-            Txt(track?.title?.trim().orEmpty(), Type.heroPlayer, onCover, maxLines = 2)
-            Spacer(Modifier.height(2.dp))
-            Txt(listOfNotNull(track?.artist, track?.album?.takeIf { it.isNotBlank() }).joinToString(" · "), Type.body, onCover.copy(alpha = 0.85f))
-            Spacer(Modifier.height(2.dp))
-            SeekBar(position, conn, onCover)
-            Controls(conn, onCover, cover, big = 62.dp)
-        }
-        // Rests under the controls, full height, its lower part simply beyond the screen.
-        Box(
-            Modifier
-                .fillMaxSize()
-                .padding(top = systemTop)
-                .graphicsLayer { translationY = (1f - vm.queueFull) * travel() }
-                .drawBehind {
-                    val q = vm.queueFull
-                    if (q > 0f) drawRoundRect(cover, cornerRadius = CornerRadius(20.dp.toPx() * (1f - q)))
-                },
-        ) {
-            QueuePanel(
-                conn,
-                onCover,
-                Modifier.fillMaxSize().padding(horizontal = 16.dp),
-                headerModifier = Modifier
-                    .draggable(
-                        headerDrag,
-                        Orientation.Vertical,
-                        onDragStopped = { v ->
-                            val q = vm.queueFull
-                            val target = if (v < -500f) 1f else if (v > 500f) 0f else if (q > 0.5f) 1f else 0f
-                            settleQueue(target, -v / travel())
-                        },
-                    )
-                    .clickable(interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }, indication = null) {
-                        settleQueue(if (vm.queueFull > 0.5f) 0f else 1f)
+    Box(
+        pageAlpha
+            .fillMaxSize()
+            .padding(top = with(density) { topPx.toDp() }, start = 12.dp, end = 12.dp)
+            .graphicsLayer { translationY = (1f - vm.queueFull) * travel() },
+    ) {
+        QueueCard(
+            vm.connection,
+            Modifier.fillMaxSize(),
+            headerModifier = Modifier
+                .draggable(
+                    headerDrag,
+                    Orientation.Vertical,
+                    onDragStopped = { v ->
+                        val q = vm.queueFull
+                        val target = if (v < -500f) 1f else if (v > 500f) 0f else if (q > 0.5f) 1f else 0f
+                        settleQueue(target, -v / travel())
                     },
-                listModifier = Modifier.nestedScroll(queueScroll),
-                extraBottom = with(density) { travel().toDp() },
-                resetKey = lowered,
-            )
+                )
+                .clickable(interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }, indication = null) {
+                    settleQueue(if (vm.queueFull > 0.5f) 0f else 1f)
+                },
+            listModifier = Modifier.nestedScroll(queueScroll),
+            extraBottom = with(density) { travel().toDp() },
+            resetKey = lowered,
+        )
+    }
+}
+
+/** The current line, floating over the mini player. Absent when the track has no timed lyrics. */
+@Composable
+private fun LyricPopup(
+    leadMs: Int,
+    lyrics: Lyrics?,
+    position: Position,
+    fill: androidx.compose.runtime.State<Color>,
+    on: Color,
+    modifier: Modifier,
+    onClick: () -> Unit,
+) {
+    val timed = lyrics?.timed.orEmpty()
+    val line by remember(timed, leadMs) { derivedStateOf { timed.getOrNull(activeLine(timed, position.value.longValue + leadMs))?.text } }
+    val shown = line ?: return
+    // Anchored at the bottom: a long line grows upward, away from the mini player.
+    Box(modifier.padding(horizontal = 14.dp), contentAlignment = Alignment.BottomStart) {
+        Box(
+            Modifier
+                .clip(RoundedCornerShape(12.dp))
+                .drawBehind { drawRect(fill.value) }
+                .clickable(onClick = onClick)
+                .padding(horizontal = 12.dp, vertical = 6.dp),
+        ) {
+            androidx.compose.animation.Crossfade(shown, animationSpec = tween(180), label = "line") { text ->
+                Txt(text, Type.small.copy(fontWeight = androidx.compose.ui.text.font.FontWeight(600)), on, maxLines = 4)
+            }
         }
     }
 }
@@ -953,38 +951,29 @@ fun PlayerPane(vm: AppViewModel, modifier: Modifier = Modifier) {
     val p = LocalPalette.current
     val track = conn.current
     val systemTop = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
-    val systemBottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
     val cover = coverColor(track, vm.prefs.coverColor, p.surfaceHigh)
     val onCover = Blocks.on(cover.target)
     val position = rememberPosition(conn)
-    Column(
-        modifier
-            .fillMaxHeight()
-            .drawBehind { drawRect(cover.fill.value) }
-            .padding(start = 16.dp, end = 16.dp, top = systemTop + 8.dp, bottom = systemBottom + 6.dp),
-    ) {
-        if (track == null) {
-            Spacer(Modifier.weight(1f))
-            return@Column
-        }
-        BoxWithConstraints(Modifier.fillMaxWidth()) {
-            Box(
-                Modifier
-                    .size(maxWidth)
-                    .pointerInput(Unit) { detectTapGestures { vm.lyricsOpen = !vm.lyricsOpen } }
-                    .swipeForTrack(conn),
-            ) {
-                ArtPager(conn, Modifier.fillMaxSize(), { true }, 14.dp)
-                LyricsOverlay(vm, position, null, Modifier.fillMaxSize())
+    Box(modifier.fillMaxHeight().drawBehind { drawRect(cover.fill.value) }) {
+        Column(Modifier.fillMaxSize().padding(top = systemTop)) {
+            if (track == null) return@Column
+            BoxWithConstraints(Modifier.fillMaxWidth()) {
+                Box(
+                    Modifier
+                        .size(maxWidth)
+                        .pointerInput(Unit) { detectTapGestures { vm.lyricsOpen = true } }
+                        .swipeForTrack(conn),
+                ) {
+                    ArtPager(conn, Modifier.fillMaxSize(), { true }, 0.dp)
+                    CoverLyricLine(vm, position, Modifier.align(Alignment.BottomCenter))
+                }
             }
+            Column(Modifier.padding(horizontal = 12.dp, vertical = 4.dp)) {
+                SeekBar(position, conn, onCover)
+                Controls(conn, onCover, cover.target, big = 56.dp)
+            }
+            QueueCard(conn, Modifier.fillMaxWidth().weight(1f).padding(horizontal = 10.dp))
         }
-        Spacer(Modifier.height(10.dp))
-        Txt(track.title.trim(), Type.section.copy(fontSize = 17.sp), onCover, maxLines = 2)
-        Txt(track.artist, Type.body, onCover.copy(alpha = 0.85f))
-        Spacer(Modifier.height(2.dp))
-        SeekBar(position, conn, onCover)
-        Controls(conn, onCover, cover.target, big = 60.dp)
-        Spacer(Modifier.height(4.dp))
-        QueuePanel(conn, onCover, Modifier.fillMaxWidth().weight(1f))
+        if (vm.lyricsOpen && track != null) FullLyrics(vm, position, Modifier.fillMaxSize())
     }
 }

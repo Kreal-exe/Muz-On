@@ -32,7 +32,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         set(v) { queueFullState.floatValue = v }
 
     var isWide by mutableStateOf(false)
-    var lyricsOpen by mutableStateOf(true)
+    var lyricsOpen by mutableStateOf(false)
 
     fun refreshLibrary(force: Boolean = false) {
         viewModelScope.launch {
