@@ -49,7 +49,9 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.FrameRateCategory
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.preferredFrameRate
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
@@ -84,6 +86,10 @@ fun AppRoot() {
             hasAudio = result[audioPermission] == true
         }
         val view = LocalView.current
+        if (Build.VERSION.SDK_INT >= 35) {
+            // The phone drops to 60 Hz the moment a finger lifts; keep the fast rate for what moves next.
+            SideEffect { view.requestedFrameRate = android.view.View.REQUESTED_FRAME_RATE_CATEGORY_HIGH }
+        }
         val light = !p.isDark
         val sheetOpen by remember { derivedStateOf { vm.sheet > 0.5f } }
         SideEffect {
@@ -93,7 +99,9 @@ fun AppRoot() {
                 isAppearanceLightNavigationBars = light && !sheetOpen
             }
         }
-        Box(Modifier.fillMaxSize().background(p.background)) {
+        // Without this the phone falls back to 60 Hz the moment a finger lifts: whatever the
+        // display's top rate is, 120 or 144, every animation gets it.
+        Box(Modifier.fillMaxSize().preferredFrameRate(FrameRateCategory.High).background(p.background)) {
             when {
                 !hasAudio -> Welcome(
                     title = stringResource(R.string.grant_title),
@@ -139,13 +147,7 @@ private fun Welcome(title: String, text: String, button: String, skip: String? =
 
 @Composable
 private fun FolderStep(vm: AppViewModel) {
-    val context = LocalContext.current
-    val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
-        if (uri != null) {
-            context.contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
-            vm.prefs.setTree(uri.toString())
-        }
-    }
+    val picker = rememberFolderPicker(vm)
     Welcome(
         title = stringResource(R.string.folder_title),
         text = stringResource(R.string.folder_text),
@@ -241,6 +243,8 @@ private fun BackHandling(vm: AppViewModel) {
         }
     }
     BackHandler(enabled = sheetOpen && vm.panel != PlayerPanel.None) { vm.panel = PlayerPanel.None }
+    // From a tab's first screen, back goes home; only from home does it leave the app.
+    BackHandler(enabled = !sheetOpen && !vm.nav.canPop && vm.nav.tab != Tab.Home) { vm.nav.select(Tab.Home) }
 }
 
 @Composable
@@ -293,6 +297,7 @@ private fun WideShell(vm: AppViewModel, library: Library) {
     val bottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
     val top = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
     BackHandler(enabled = vm.nav.canPop) { vm.nav.pop() }
+    BackHandler(enabled = !vm.nav.canPop && vm.nav.tab != Tab.Home) { vm.nav.select(Tab.Home) }
     Row(Modifier.fillMaxSize()) {
         Sidebar(vm, library, Modifier.width(158.dp).fillMaxHeight().padding(top = top, bottom = bottom))
         Box(Modifier.weight(1f).fillMaxHeight().clip(RoundedCornerShape(0.dp))) {
@@ -364,6 +369,22 @@ private fun Sidebar(vm: AppViewModel, library: Library, modifier: Modifier) {
             Tappable({ vm.nav.push(Route.SettingsRoute) }, Modifier.size(38.dp), bounded = false) {
                 Glyph(GlyphKind.Settings, 20.dp, p.muted)
             }
+        }
+    }
+}
+
+/** Opens the system folder picker at Music, and reads the library again with what was chosen. */
+@Composable
+fun rememberFolderPicker(vm: AppViewModel): androidx.activity.compose.ManagedActivityResultLauncher<android.net.Uri?, android.net.Uri?> {
+    val context = LocalContext.current
+    return rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
+        if (uri != null) {
+            context.contentResolver.persistedUriPermissions
+                .filter { it.uri != uri }
+                .forEach { context.contentResolver.releasePersistableUriPermission(it.uri, Intent.FLAG_GRANT_READ_URI_PERMISSION) }
+            context.contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            vm.prefs.setTree(uri.toString())
+            vm.refreshLibrary(force = true)
         }
     }
 }

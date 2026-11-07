@@ -73,8 +73,12 @@
     <string name="size_medium">보통</string>
     <string name="size_large">크게</string>
     <string name="s_keep_screen">가사 표시 중 화면 켜짐</string>
-    <string name="up_next">다음 재생</string>
     <string name="s_lyric_popup">미니 플레이어 위에 현재 가사</string>
+    <string name="no_db_title">이 폴더에 Mac 보관함이 없습니다</string>
+    <string name="s_online_art">없는 커버를 온라인에서 찾기</string>
+    <string name="s_online_art_hint">이미지가 없는 곡의 아티스트와 제목을 Deezer 및 iTunes로 보냅니다</string>
+    <string name="s_lyrics_lead">가사 미리 표시</string>
+    <string name="seconds_short">%1$.2f초</string>
     <string name="s_about">정보</string>
     <string name="s_privacy">개인정보처리방침</string>
     <plurals name="songs">

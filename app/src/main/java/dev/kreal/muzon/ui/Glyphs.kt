@@ -22,6 +22,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.DrawScope
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.Dp
@@ -46,18 +47,25 @@ fun Glyph(kind: GlyphKind, size: Dp, tint: Color, modifier: Modifier = Modifier)
     if (LocalAppTheme.current == AppTheme.Poster) {
         Icon(kind.vector(), null, tint = tint, modifier = modifier.size(size))
     } else {
-        Canvas(modifier.size(size)) { drawDetailed(kind) }
+        Canvas(modifier.size(size)) { drawDetailed(kind, tint) }
     }
 }
 
-private val metal = Brush.verticalGradient(
+private val darkMetal = Brush.verticalGradient(
+    0f to Color(0xFF6E7884), 0.4f to Color(0xFF4A535E), 0.52f to Color(0xFF2B323A), 0.6f to Color(0xFF5B6570), 1f to Color(0xFF39414B),
+)
+private val brightMetal = Brush.verticalGradient(
     0f to Color.White, 0.4f to Color(0xFFD6DCE3), 0.52f to Color(0xFF8C96A3), 0.6f to Color(0xFFEDF1F5), 1f to Color(0xFFA9B2BD),
 )
 private val paper = Brush.verticalGradient(0f to Color.White, 1f to Color(0xFFD9E3EC))
 private val ink = Color(0xFF1C2530)
 
-private fun DrawScope.drawDetailed(kind: GlyphKind) {
+/** The subject keeps its own colours; [tint] is what contrasts with the background it sits on. */
+private fun DrawScope.drawDetailed(kind: GlyphKind, tint: Color) {
     val u = size.minDimension / 24f
+    val onLight = tint.luminance() < 0.3f
+    val metal = if (onLight) darkMetal else brightMetal
+    val paper = if (onLight) Brush.verticalGradient(0f to Color(0xFFFFFFFF), 1f to Color(0xFFC4CFD9)) else paper
     when (kind) {
         GlyphKind.Playlists -> {
             drawRoundRect(paper, Offset(3 * u, 3 * u), Size(18 * u, 18 * u), CornerRadius(3 * u))
@@ -82,7 +90,8 @@ private fun DrawScope.drawDetailed(kind: GlyphKind) {
             drawNote(u, Offset(6.5f * u, 10 * u), 0.62f, ink)
         }
         GlyphKind.Songs -> {
-            drawNote(u, Offset(3 * u, 2 * u), 1f, null)
+            drawNote(u, Offset(3 * u, 2 * u), 1f, tint)
+            drawLine(Color.White.copy(alpha = if (onLight) 0.5f else 0.8f), Offset(10.2f * u, 7.4f * u), Offset(20 * u, 4.7f * u), 0.9f * u, StrokeCap.Round)
         }
         GlyphKind.Recent -> {
             drawCircle(metal, 10.5f * u, center)

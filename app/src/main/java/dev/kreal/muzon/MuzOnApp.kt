@@ -14,7 +14,7 @@ import dev.kreal.muzon.ui.ArtKeyer
 class MuzOnApp : Application(), ImageLoaderFactory {
     val prefs by lazy { Prefs(this) }
     val repository by lazy { LibraryRepository(this, prefs) }
-    val connection by lazy { PlayerConnection(this, prefs) }
+    val connection by lazy { PlayerConnection(this, prefs) { exoPlayer } }
 
     /** Set by the service while it runs; settings that have no controller command go through it. */
     var exoPlayer: ExoPlayer? = null

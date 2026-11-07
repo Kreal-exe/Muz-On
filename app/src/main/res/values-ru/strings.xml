@@ -73,8 +73,12 @@
     <string name="size_medium">Средний</string>
     <string name="size_large">Крупный</string>
     <string name="s_keep_screen">Не гасить экран с текстом</string>
-    <string name="up_next">Дальше</string>
     <string name="s_lyric_popup">Строка текста над мини-плеером</string>
+    <string name="no_db_title">В этой папке нет медиатеки Mac</string>
+    <string name="s_online_art">Искать недостающие обложки в сети</string>
+    <string name="s_online_art_hint">Отправляет артиста и название треков без картинки в Deezer и iTunes</string>
+    <string name="s_lyrics_lead">Показывать строку заранее</string>
+    <string name="seconds_short">%1$.2f с</string>
     <string name="s_about">О приложении</string>
     <string name="s_privacy">Политика конфиденциальности</string>
     <plurals name="songs">

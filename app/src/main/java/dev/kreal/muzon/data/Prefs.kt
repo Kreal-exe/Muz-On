@@ -46,6 +46,18 @@ class Prefs(context: Context) {
         get() = lyricPopupState.value
         set(v) { lyricPopupState.value = v; sp.edit().putBoolean("lyricPopup", v).apply() }
 
+    private val onlineArtState = mutableStateOf(sp.getBoolean("onlineArt", true))
+    var onlineArt: Boolean
+        get() = onlineArtState.value
+        set(v) { onlineArtState.value = v; sp.edit().putBoolean("onlineArt", v).apply() }
+
+    private val lyricsLeadState = mutableStateOf(sp.getInt("lyricsLead", 500))
+
+    /** How long before its timestamp a line lights up, in milliseconds. */
+    var lyricsLeadMs: Int
+        get() = lyricsLeadState.value
+        set(v) { lyricsLeadState.value = v; sp.edit().putInt("lyricsLead", v).apply() }
+
     private val skipSilenceState = mutableStateOf(sp.getBoolean("skipSilence", false))
     var skipSilence: Boolean
         get() = skipSilenceState.value

@@ -169,13 +169,7 @@ fun SettingsScreen(vm: AppViewModel, library: Library) {
     val prefs = vm.prefs
     val context = LocalContext.current
     val top = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
-    val folderPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
-        if (uri != null) {
-            context.contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
-            prefs.setTree(uri.toString())
-            vm.refreshLibrary(force = true)
-        }
-    }
+    val folderPicker = rememberFolderPicker(vm)
     LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(top = top, bottom = LocalBottomSpace.current + 16.dp)) {
         item {
             Row(Modifier.fillMaxWidth().height(48.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -239,6 +233,8 @@ fun SettingsScreen(vm: AppViewModel, library: Library) {
         }
         item { Row_(stringResource(R.string.s_update), null, { vm.refreshLibrary(force = true) }) }
 
+        item { Toggle(stringResource(R.string.s_online_art), stringResource(R.string.s_online_art_hint), prefs.onlineArt) { prefs.onlineArt = it } }
+
         item { Section(stringResource(R.string.s_playback)) }
         item { Toggle(stringResource(R.string.s_skip_silence), null, prefs.skipSilence) { vm.applySkipSilence(it) } }
         item {
@@ -276,6 +272,14 @@ fun SettingsScreen(vm: AppViewModel, library: Library) {
                     )
                 },
             ) { prefs.lyricsSize = it }
+        }
+        item {
+            Choice(
+                stringResource(R.string.s_lyrics_lead),
+                prefs.lyricsLeadMs,
+                listOf(0, 250, 500, 750, 1000, 1500),
+                { stringResource(R.string.seconds_short, it / 1000f) },
+            ) { prefs.lyricsLeadMs = it }
         }
         item { Toggle(stringResource(R.string.s_keep_screen), null, prefs.keepScreenForLyrics) { prefs.keepScreenForLyrics = it } }
         item { Toggle(stringResource(R.string.s_lyric_popup), null, prefs.lyricPopup) { prefs.lyricPopup = it } }

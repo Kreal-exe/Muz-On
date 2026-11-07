@@ -73,8 +73,12 @@
     <string name="size_medium">Середній</string>
     <string name="size_large">Великий</string>
     <string name="s_keep_screen">Не вимикати екран із текстом</string>
-    <string name="up_next">Далі</string>
     <string name="s_lyric_popup">Рядок тексту над міні-плеєром</string>
+    <string name="no_db_title">У цій теці немає медіатеки Mac</string>
+    <string name="s_online_art">Шукати відсутні обкладинки в мережі</string>
+    <string name="s_online_art_hint">Надсилає виконавця й назву треків без зображення до Deezer та iTunes</string>
+    <string name="s_lyrics_lead">Показувати рядок заздалегідь</string>
+    <string name="seconds_short">%1$.2f с</string>
     <string name="s_about">Про застосунок</string>
     <string name="s_privacy">Політика конфіденційності</string>
     <plurals name="songs">

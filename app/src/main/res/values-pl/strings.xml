@@ -73,8 +73,12 @@
     <string name="size_medium">Średni</string>
     <string name="size_large">Duży</string>
     <string name="s_keep_screen">Nie wygaszaj ekranu przy tekście</string>
-    <string name="up_next">Następne</string>
     <string name="s_lyric_popup">Bieżący wiersz nad minipanelem</string>
+    <string name="no_db_title">W tym folderze nie ma biblioteki Maca</string>
+    <string name="s_online_art">Szukaj brakujących okładek w sieci</string>
+    <string name="s_online_art_hint">Wysyła wykonawcę i tytuł utworów bez obrazu do Deezer i iTunes</string>
+    <string name="s_lyrics_lead">Pokazuj wiersz wcześniej</string>
+    <string name="seconds_short">%1$.2f s</string>
     <string name="s_about">O aplikacji</string>
     <string name="s_privacy">Prywatność</string>
     <plurals name="songs">

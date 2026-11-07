@@ -73,8 +73,12 @@
     <string name="size_medium">中</string>
     <string name="size_large">大</string>
     <string name="s_keep_screen">歌詞表示中は画面をオン</string>
-    <string name="up_next">次に再生</string>
     <string name="s_lyric_popup">ミニプレーヤーの上に現在の行</string>
+    <string name="no_db_title">このフォルダーにMacのライブラリはありません</string>
+    <string name="s_online_art">足りないジャケットをオンラインで探す</string>
+    <string name="s_online_art_hint">画像のない曲のアーティスト名と曲名をDeezerとiTunesに送信します</string>
+    <string name="s_lyrics_lead">行を早めに表示</string>
+    <string name="seconds_short">%1$.2f秒</string>
     <string name="s_about">このアプリについて</string>
     <string name="s_privacy">プライバシー</string>
     <plurals name="songs">

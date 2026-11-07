@@ -38,7 +38,6 @@ import androidx.compose.material.icons.rounded.DragHandle
 import androidx.compose.material.icons.rounded.KeyboardArrowDown
 import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.Search
-import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material.icons.rounded.Shuffle
 import androidx.compose.material.icons.rounded.Visibility
 import androidx.compose.material.icons.rounded.VisibilityOff
@@ -76,6 +75,7 @@ import dev.kreal.muzon.R
 import dev.kreal.muzon.data.Album
 import dev.kreal.muzon.data.AppTheme
 import dev.kreal.muzon.data.Library
+import dev.kreal.muzon.data.LibrarySource
 import dev.kreal.muzon.data.Place
 import dev.kreal.muzon.data.Playlist
 import dev.kreal.muzon.data.PlaylistSort
@@ -168,6 +168,9 @@ private fun HomeScreen(vm: AppViewModel, library: Library) {
         item(key = "places", span = { GridItemSpan(maxLineSpan) }, contentType = "places") {
             if (editing) PlacesEditor(vm) else PlaceTiles(vm, library, places, theme)
         }
+        if (library.source != LibrarySource.MusicDatabase && vm.prefs.treeUri != null) {
+            item(key = "noDb", span = { GridItemSpan(maxLineSpan) }, contentType = "noDb") { NoLibraryCard(vm) }
+        }
         item(key = "actions", span = { GridItemSpan(maxLineSpan) }, contentType = "actions") {
             Row(Modifier.fillMaxWidth().height(34.dp), verticalAlignment = Alignment.CenterVertically) {
                 Row(
@@ -178,10 +181,16 @@ private fun HomeScreen(vm: AppViewModel, library: Library) {
                     Spacer(Modifier.width(5.dp))
                     Txt(stringResource(R.string.search), Type.small, p.muted)
                 }
-                Spacer(Modifier.weight(1f))
-                if (editing) {
-                    IconTap(Icons.Rounded.Settings, p.muted, 20.dp, 34.dp) { vm.nav.push(Route.SettingsRoute) }
+                Spacer(Modifier.width(10.dp))
+                Row(
+                    Modifier.clip(RoundedCornerShape(8.dp)).clickable { vm.nav.push(Route.SettingsRoute) }.padding(4.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Glyph(GlyphKind.Settings, 18.dp, p.muted)
+                    Spacer(Modifier.width(5.dp))
+                    Txt(stringResource(R.string.settings), Type.small, p.muted)
                 }
+                Spacer(Modifier.weight(1f))
                 Tappable({ editing = !editing }, Modifier.clip(RoundedCornerShape(8.dp)).padding(4.dp)) {
                     Txt(stringResource(if (editing) R.string.done else R.string.edit), Type.small, if (editing) p.accent else p.muted)
                 }
@@ -354,6 +363,22 @@ fun Mosaic(tracks: List<Track>, modifier: Modifier = Modifier, corner: Dp = 8.dp
     }
 }
 
+/** Says plainly that the Mac library was not found in the chosen folder, with the way to fix it. */
+@Composable
+private fun NoLibraryCard(vm: AppViewModel) {
+    val picker = rememberFolderPicker(vm)
+    val folder = vm.prefs.treeUri?.let { android.net.Uri.parse(it).lastPathSegment?.substringAfterLast(':') }
+    Column(Modifier.fillMaxWidth().block(Blocks.Teal, LocalAppTheme.current, 16.dp).padding(12.dp)) {
+        val on = Blocks.on(Blocks.Teal)
+        Txt(stringResource(R.string.no_db_title), Type.tile, on, maxLines = 2)
+        if (folder != null) Txt(folder, Type.small, on)
+        Spacer(Modifier.height(8.dp))
+        Box(
+            Modifier.clip(RoundedCornerShape(17.dp)).background(on).clickable { picker.launch(musicFolderUri()) }.padding(horizontal = 14.dp, vertical = 7.dp),
+        ) { Txt(stringResource(R.string.folder_button), Type.bodyBold, Blocks.Teal) }
+    }
+}
+
 // ---- Lists
 
 @Composable
@@ -394,6 +419,7 @@ private fun PlaylistsScreen(vm: AppViewModel, library: Library) {
         }
         if (library.playlists.isEmpty()) {
             item { Txt(stringResource(R.string.no_playlists), Type.body, p.muted, Modifier.padding(14.dp), maxLines = 4) }
+            item { NoLibraryCard(vm) }
         }
     }
 }

@@ -13,7 +13,8 @@ If you also keep music on a Mac, Muz On can show the playlists of that library: 
 - Swipe the player down, swipe the artwork sideways to change track
 - Themes: Poster, Detailed, Aero. Dark, black, light
 - 14 languages
-- No account, no network, no analytics
+- Missing covers found online, by artist and title, and only if you leave that on
+- No account, no analytics
 
 ## Mac library
 
