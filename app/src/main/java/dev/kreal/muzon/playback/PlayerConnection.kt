@@ -71,7 +71,14 @@ class PlayerConnection(private val context: Context, private val prefs: Prefs, p
         if (controller != null || connecting) return
         connecting = true
         val token = SessionToken(context, ComponentName(context, PlaybackService::class.java))
-        val future = MediaController.Builder(context, token).buildAsync()
+        val future = MediaController.Builder(context, token)
+            .setListener(object : MediaController.Listener {
+                // The service can stop while the app stays alive: a dead controller must not stay in use.
+                override fun onDisconnected(controller: MediaController) {
+                    if (this@PlayerConnection.controller === controller) this@PlayerConnection.controller = null
+                }
+            })
+            .buildAsync()
         future.addListener(
             {
                 connecting = false
@@ -90,6 +97,27 @@ class PlayerConnection(private val context: Context, private val prefs: Prefs, p
         this.library = library
         controller?.let(::adoptOrRestore)
     }
+
+    /**
+     * Brings the UI in line with the player, whatever was missed. Called several times a second while
+     * the player is on screen, so a lost event can never leave a stale button, clock or lyric line.
+     */
+    fun refresh() {
+        val c = controller
+        if (c == null || !c.isConnected) {
+            controller = null
+            connect()
+        }
+        val player: Player = localPlayer() ?: c?.takeIf { it.isConnected } ?: return
+        if (player.mediaItemCount == 0) return
+        if (queue.size != player.mediaItemCount) {
+            library?.let { lib -> queue = (0 until player.mediaItemCount).mapNotNull { lib.byId[player.getMediaItemAt(it).mediaId] } }
+        }
+        sync(player)
+    }
+
+    private var orderedTimeline: Timeline? = null
+    private var orderedShuffle = false
 
     private fun adoptOrRestore(c: MediaController) {
         val lib = library ?: return
@@ -115,8 +143,13 @@ class PlayerConnection(private val context: Context, private val prefs: Prefs, p
         shuffle = p.shuffleModeEnabled
         repeatMode = p.repeatMode
         durationMs = p.duration.takeIf { it != C.TIME_UNSET } ?: (current?.durationMs ?: 0L)
-        val order = orderOf(p.currentTimeline, p.shuffleModeEnabled)
-        if (order != playOrder) playOrder = order
+        val timeline = p.currentTimeline
+        if (timeline !== orderedTimeline || p.shuffleModeEnabled != orderedShuffle) {
+            orderedTimeline = timeline
+            orderedShuffle = p.shuffleModeEnabled
+            val order = orderOf(timeline, p.shuffleModeEnabled)
+            if (order != playOrder) playOrder = order
+        }
     }
 
     private fun orderOf(timeline: Timeline, shuffled: Boolean): List<Int> {
