@@ -121,6 +121,17 @@ class Prefs(context: Context) {
         sp.edit().putString("tile_${place.name}", next.name).apply()
     }
 
+    /** Bottom tabs in the order the user set; by default home, songs, artists, albums, playlists. */
+    var tabOrder: List<String> by mutableStateOf(
+        sp.getString("tabs", null)?.split(',')?.filter { it.isNotEmpty() } ?: listOf("Home", "Songs", "Artists", "Albums", "Playlists"),
+    )
+        private set
+
+    fun updateTabOrder(order: List<String>) {
+        tabOrder = order
+        sp.edit().putString("tabs", order.joinToString(",")).apply()
+    }
+
     fun sortOf(playlistId: String): Pair<PlaylistSort, Boolean> {
         val mode = PlaylistSort.entries.firstOrNull { it.name == sp.getString("sort_$playlistId", null) }
             ?: PlaylistSort.AsInMusic
