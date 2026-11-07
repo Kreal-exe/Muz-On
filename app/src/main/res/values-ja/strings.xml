@@ -133,6 +133,18 @@
     <string name="seconds_whole">%1$d秒</string>
     <string name="s_about">このアプリについて</string>
     <string name="s_privacy">プライバシー</string>
+    <string name="s_app_icon">アプリアイコン</string>
+    <string name="s_app_icon_hint">ホーム画面に新しいアイコンが表示されるまで少し時間がかかることがあります</string>
+    <string name="icon_orange">オレンジ</string>
+    <string name="icon_violet">バイオレット</string>
+    <string name="icon_pink">ピンク</string>
+    <string name="icon_teal">ティール</string>
+    <string name="icon_blue">ブルー</string>
+    <string name="icon_black">ブラック</string>
+    <string name="icon_white">ホワイト</string>
+    <string name="icon_sunset">サンセット</string>
+    <string name="icon_note">音符</string>
+    <string name="icon_wave">サウンド</string>
     <plurals name="songs">
         <item quantity="other">%d曲</item>
     </plurals>
