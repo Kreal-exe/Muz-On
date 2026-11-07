@@ -368,7 +368,48 @@ fun SettingsScreen(vm: AppViewModel, library: Library) {
             val folder = prefs.treeUri?.let { Uri.parse(it).lastPathSegment?.substringAfterLast(':') }
             Row_(stringResource(R.string.s_folder), folder ?: stringResource(R.string.folder_none), { folderPicker.launch(musicFolderUri()) })
         }
+        item {
+            val libraryPicker = rememberLibraryPicker(vm)
+            val chosen = prefs.libraryTree?.let { android.net.Uri.parse(it).lastPathSegment?.substringAfterLast(':') }
+            Row_(stringResource(R.string.s_library_file), chosen ?: stringResource(R.string.library_file_default), { libraryPicker.launch(null) }) {
+                if (chosen != null) {
+                    Tappable({
+                        prefs.chooseLibraryTree(null)
+                        vm.refreshLibrary(force = true)
+                    }, Modifier.clip(RoundedCornerShape(12.dp)).padding(horizontal = 10.dp, vertical = 6.dp)) {
+                        Txt(stringResource(R.string.reset), Type.small, LocalPalette.current.accent)
+                    }
+                }
+            }
+        }
         item { Row_(stringResource(R.string.s_update), null, { vm.refreshLibrary(force = true) }) }
+        item {
+            // Favourites and own playlists live as M3U8 files in Music/Playlists once the folder may be written.
+            val writable = remember(prefs.treeUri) { vm.repository.canWritePlaylists() }
+            Row_(
+                stringResource(R.string.s_playlist_files),
+                stringResource(if (writable) R.string.playlist_files_on else R.string.playlist_files_off),
+                { if (!writable) folderPicker.launch(musicFolderUri()) },
+            )
+        }
+        item {
+            val context = androidx.compose.ui.platform.LocalContext.current
+            Row_(stringResource(R.string.s_export), stringResource(R.string.s_export_hint), {
+                vm.viewModelScope.launch {
+                    val n = vm.repository.exportPlaylists()
+                    android.widget.Toast.makeText(context, context.resources.getQuantityString(R.plurals.playlists_exported, n, n), android.widget.Toast.LENGTH_LONG).show()
+                }
+            })
+        }
+        item {
+            Toggle(stringResource(R.string.s_show_missing), stringResource(R.string.s_show_missing_hint), prefs.showMissing) {
+                prefs.showMissing = it
+                vm.viewModelScope.launch {
+                    vm.repository.reapplyFilters()
+                    vm.repository.library.value?.let(vm.connection::onLibrary)
+                }
+            }
+        }
         item {
             val off = stringResource(R.string.sleep_off)
             Choice(stringResource(R.string.s_min_length), prefs.minTrackSeconds, listOf(0, 10, 30, 60), { if (it == 0) off else stringResource(R.string.seconds_whole, it) }) {

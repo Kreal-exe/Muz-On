@@ -249,6 +249,14 @@ class PlayerConnection(private val context: Context, private val prefs: Prefs, p
         main.post { current = tracks[index]; wantsToPlay = true }
     }
 
+    /** Plays on from where the queue stopped, unless it is playing already or there is nothing to play. */
+    fun resume() = withController { c ->
+        if (c.isPlaying || c.mediaItemCount == 0) return@withController
+        if (c.playbackState == Player.STATE_ENDED) c.seekToDefaultPosition()
+        if (c.playbackState == Player.STATE_IDLE) c.prepare()
+        c.play()
+    }
+
     fun togglePlay() = withController { c ->
         if (c.playWhenReady && c.playbackState != Player.STATE_ENDED) {
             c.pause()
@@ -311,6 +319,17 @@ class PlayerConnection(private val context: Context, private val prefs: Prefs, p
 
     fun seekBy(ms: Long) = withController { it.seekTo((it.currentPosition + ms).coerceAtLeast(0)) }
 
+
+    /** Stops and empties the queue, as the classic player's "clear queue": the mini player goes away. */
+    fun clearQueue() = withController { c ->
+        c.stop()
+        c.clearMediaItems()
+        queue = emptyList()
+        playOrder = emptyList()
+        current = null
+        wantsToPlay = false
+        prefs.clearSavedQueue()
+    }
 
     fun removeWindow(window: Int) = withController { c ->
         if (window in 0 until c.mediaItemCount && window != c.currentMediaItemIndex) {

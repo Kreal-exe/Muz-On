@@ -56,6 +56,17 @@ class Navigator {
     val stack get() = stacks.getValue(tab)
     fun stackOf(t: Tab): List<Route> = stacks.getValue(t)
 
+    /** Called for every page taken off a stack, so its saved scroll position goes with it. */
+    var onRemoved: (Tab, Route) -> Unit = { _, _ -> }
+
+    private fun drop(t: Tab, list: MutableList<Route>) {
+        val route = list.removeAt(list.lastIndex)
+        onRemoved(t, route)
+    }
+
+    /** Counts taps on an already open tab; its first page scrolls to the top on each. */
+    val topTaps = androidx.compose.runtime.mutableStateMapOf<Tab, Int>()
+
     /** Tabs seen before the current one, most recent last, for back. */
     private val history = mutableListOf<Tab>()
 
@@ -100,7 +111,12 @@ class Navigator {
         settle()
         progress = 1f
         if (target == tab) {
-            while (stack.size > 1) stack.removeAt(stack.lastIndex)
+            // A second tap on the open tab: back to its first page, and on that page back to the top.
+            if (stack.size > 1) {
+                while (stack.size > 1) drop(tab, stack)
+            } else {
+                topTaps[target] = (topTaps[target] ?: 0) + 1
+            }
         } else {
             enter(target)
         }
@@ -111,7 +127,7 @@ class Navigator {
         progress = 1f
         enter(target)
         val list = stacks.getValue(target)
-        while (list.size > 1) list.removeAt(list.lastIndex)
+        while (list.size > 1) drop(target, list)
         list.add(route)
     }
 
@@ -152,7 +168,7 @@ class Navigator {
     // The page leaves first; only on the next frame is the stack at rest again. Doing both at once let
     // the leaving page show for a frame at full width before it was gone.
     private suspend fun finishPop() {
-        if (stack.size > 1) stack.removeAt(stack.lastIndex)
+        if (stack.size > 1) drop(tab, stack)
         withFrameNanos { }
         progress = 1f
     }

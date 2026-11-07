@@ -196,6 +196,8 @@ private fun Loaded(vm: AppViewModel) {
 @Composable
 private fun CompactShell(vm: AppViewModel, library: Library) {
     val holder = rememberSaveableStateHolder()
+    // A page closed and opened again starts at its top, not where it was left.
+    SideEffect { vm.nav.onRemoved = { tab, route -> holder.removeState("$tab/${route.key}") } }
     val p = LocalPalette.current
     // Kept clear of the system's gesture strip at the bottom edge, where a sideways drag switches apps.
     val bottom = maxOf(WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding(), 14.dp)
@@ -360,7 +362,7 @@ private fun TabBar(vm: AppViewModel, modifier: Modifier) {
                         val tab = currentTabs[i]
                         lifted = tab
                         liftX.floatValue = i * slot
-                        haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress)
+                        if (vm.prefs.haptics) haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress)
                         var last = down.position.x
                         while (true) {
                             val event = awaitPointerEvent(androidx.compose.ui.input.pointer.PointerEventPass.Initial)
@@ -405,7 +407,7 @@ private fun TabBar(vm: AppViewModel, modifier: Modifier) {
 
 @Composable
 private fun TabItem(vm: AppViewModel, tab: Tab, theme: AppTheme, p: Palette, modifier: Modifier) {
-    val selected = vm.nav.tab == tab
+    val selected = vm.litTab == tab
     val color = tabColor(tab)
     val shown by androidx.compose.animation.core.animateFloatAsState(if (selected) 1f else 0f, androidx.compose.animation.core.tween(180), label = "tab")
     Column(
@@ -493,7 +495,7 @@ private fun Sidebar(vm: AppViewModel, library: Library, modifier: Modifier) {
     val tabs = vm.tabs()
     LazyColumn(modifier.background(p.background), contentPadding = PaddingValues(start = 8.dp, end = 4.dp, top = 6.dp, bottom = 8.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
         items(tabs, key = { it.name }) { tab ->
-            val selected = vm.nav.tab == tab
+            val selected = vm.litTab == tab
             val color = tabColor(tab)
             val on = Blocks.on(color)
             Row(
@@ -558,9 +560,11 @@ fun rememberFolderPicker(vm: AppViewModel): androidx.activity.compose.ManagedAct
     return rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
         if (uri != null) {
             context.contentResolver.persistedUriPermissions
-                .filter { it.uri != uri }
+                .filter { it.uri != uri && it.uri.toString() != vm.prefs.libraryTree }
                 .forEach { context.contentResolver.releasePersistableUriPermission(it.uri, Intent.FLAG_GRANT_READ_URI_PERMISSION) }
-            context.contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            // Write too, when the folder allows it: playlists are kept as files in Music/Playlists.
+            runCatching { context.contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION) }
+                .onFailure { context.contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION) }
             vm.prefs.setTree(uri.toString())
             vm.refreshLibrary(force = true)
         }
@@ -579,38 +583,74 @@ private fun TabPager(vm: AppViewModel, holder: androidx.compose.runtime.saveable
     val currentTabs by androidx.compose.runtime.rememberUpdatedState(tabs)
     val pager = androidx.compose.foundation.pager.rememberPagerState(initialPage = tabs.indexOf(vm.nav.tab).coerceAtLeast(0)) { tabs.size }
     // Only a finger's swipe changes the tab from here; a tap's run or a reorder of the tabs must not.
-    var swiped by remember { mutableStateOf(false) }
+    // A swipe lasts from the finger going down until the pager comes to rest, fling included.
+    var swiping by remember { mutableStateOf(false) }
+    // The tab a swipe landed on. Its change of tab needs no run: the pager is already there, and a run
+    // started from it could pull a quick second swipe back to this tab.
+    var landedBySwipe by remember { mutableStateOf<Tab?>(null) }
     LaunchedEffect(pager) {
-        pager.interactionSource.interactions.collect { if (it is androidx.compose.foundation.interaction.DragInteraction.Start) swiped = true }
+        pager.interactionSource.interactions.collect { if (it is androidx.compose.foundation.interaction.DragInteraction.Start) swiping = true }
+    }
+    // While swiping, the tab bar lights the page the swipe is heading for, from the moment it passes
+    // half way, instead of waiting for the pager to stop.
+    LaunchedEffect(pager) {
+        androidx.compose.runtime.snapshotFlow { if (swiping) currentTabs.getOrNull(pager.targetPage) else null }
+            .collect { vm.swipeTab = it }
+    }
+    // Every time the pager comes to rest after a swipe, the open tab is the page it rests on.
+    LaunchedEffect(pager) {
+        androidx.compose.runtime.snapshotFlow { pager.isScrollInProgress to pager.settledPage }.collect { (moving, page) ->
+            if (moving || !swiping) return@collect
+            swiping = false
+            vm.swipeTab = null
+            val tab = currentTabs.getOrNull(page) ?: return@collect
+            if (tab != vm.nav.tab) {
+                landedBySwipe = tab
+                vm.nav.showTab(tab)
+            }
+        }
     }
     LaunchedEffect(vm.nav.tab) {
-        swiped = false
-        // Wait for a fling still under way instead of dropping the tap.
-        androidx.compose.runtime.snapshotFlow { pager.isScrollInProgress }.first { !it }
+        if (vm.nav.tab == landedBySwipe) return@LaunchedEffect
+        landedBySwipe = null
+        // A tap wins over a swipe still under way: the swipe's landing must not take the tab back.
+        swiping = false
+        vm.swipeTab = null
         val target = currentTabs.indexOf(vm.nav.tab)
         if (target < 0 || (pager.currentPage == target && pager.currentPageOffsetFraction == 0f)) return@LaunchedEffect
         // One quick run across every tab in between, driven as one distance: the pager's own
-        // animation would jump over all but the last three pages.
+        // animation would jump over all but the last three pages. It takes over from a fling.
         val pages = kotlin.math.abs(pager.currentPage - target)
         val distance = ((target - pager.currentPage) - pager.currentPageOffsetFraction) * (pager.layoutInfo.pageSize + pager.layoutInfo.pageSpacing)
         pager.animateScrollBy(distance, androidx.compose.animation.core.tween(220 + 70 * pages, easing = androidx.compose.animation.core.FastOutSlowInEasing))
         pager.scrollToPage(target)
     }
-    LaunchedEffect(pager) {
-        androidx.compose.runtime.snapshotFlow { pager.settledPage }.collect { page ->
-            if (swiped) {
-                swiped = false
-                currentTabs.getOrNull(page)?.let { vm.nav.showTab(it) }
-            }
-        }
-    }
     androidx.compose.foundation.pager.HorizontalPager(
         state = pager,
         modifier = modifier.fillMaxSize(),
-        // The neighbours stay built, so a swipe or a run does not build a whole list on its first frame.
-        beyondViewportPageCount = 1,
+        // Every tab stays built, so a swipe or a run across several tabs never builds a list mid-way:
+        // building them during the run was the jerk on the way from Playlists back to Home.
+        beyondViewportPageCount = tabs.size,
         key = { tabs[it].name },
     ) { page ->
         StackHost(vm.nav, holder, tab = tabs[page], content = content)
+    }
+}
+
+/** Picks the Music library folder ("Music Library.musiclibrary") when it is not in the music folder. */
+@Composable
+fun rememberLibraryPicker(vm: AppViewModel): androidx.activity.compose.ManagedActivityResultLauncher<android.net.Uri?, android.net.Uri?> {
+    val context = LocalContext.current
+    return rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
+        if (uri != null) {
+            vm.prefs.libraryTree?.let { old ->
+                if (old != uri.toString() && old != vm.prefs.treeUri) {
+                    runCatching { context.contentResolver.releasePersistableUriPermission(android.net.Uri.parse(old), Intent.FLAG_GRANT_READ_URI_PERMISSION) }
+                }
+            }
+            context.contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            vm.prefs.chooseLibraryTree(uri.toString())
+            vm.refreshLibrary(force = true)
+        }
     }
 }

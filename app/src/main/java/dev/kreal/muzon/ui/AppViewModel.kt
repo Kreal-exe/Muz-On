@@ -42,12 +42,24 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         wirelessState.value = audio.getDevices(android.media.AudioManager.GET_DEVICES_OUTPUTS).any { it.type in wireless }
     }
 
+    // Files added or deleted on the phone show up without a restart.
+    private val mediaHandler = android.os.Handler(android.os.Looper.getMainLooper())
+    private val mediaChanged = Runnable { refreshLibrary() }
+    private val mediaObserver = object : android.database.ContentObserver(mediaHandler) {
+        override fun onChange(selfChange: Boolean) {
+            mediaHandler.removeCallbacks(mediaChanged)
+            mediaHandler.postDelayed(mediaChanged, 1500)
+        }
+    }
+
     init {
+        application.contentResolver.registerContentObserver(android.provider.MediaStore.Audio.Media.EXTERNAL_CONTENT_URI, true, mediaObserver)
         checkOutputs()
         audio.registerAudioDeviceCallback(outputs, android.os.Handler(android.os.Looper.getMainLooper()))
     }
 
     override fun onCleared() {
+        getApplication<Application>().contentResolver.unregisterContentObserver(mediaObserver)
         audio.unregisterAudioDeviceCallback(outputs)
     }
 
@@ -74,6 +86,12 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     var topFrameRate by mutableFloatStateOf(120f)
 
     var isWide by mutableStateOf(false)
+
+    /** The tab a finger is swiping to, lit below before the pager comes to rest; null otherwise. */
+    var swipeTab by mutableStateOf<dev.kreal.muzon.ui.Tab?>(null)
+
+    /** The tab lit in the tab bar: where a swipe is heading, else the open one. */
+    val litTab: dev.kreal.muzon.ui.Tab get() = swipeTab ?: nav.tab
     var lyricsOpen by mutableStateOf(false)
 
     /** Opens a screen from anywhere, the player included, which closes to show it. */

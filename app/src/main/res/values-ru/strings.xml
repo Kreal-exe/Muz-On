@@ -150,6 +150,17 @@
     <string name="covers_cleared">Освобождено %1$s</string>
     <string name="clear">Очистить</string>
     <string name="reset">Сбросить</string>
+    <string name="queue_clear">Очистить</string>
+    <string name="s_library_file">Медиатека Music</string>
+    <string name="library_file_default">Music/Music Library.musiclibrary в папке музыки</string>
+    <string name="s_show_missing">Показывать песни, которых нет на телефоне</string>
+    <string name="s_show_missing_hint">Из медиатеки Mac, серыми; играть не будут</string>
+    <string name="favourites">Избранное</string>
+    <string name="s_export">Выгрузить плейлисты для Music</string>
+    <string name="s_export_hint">Ваши плейлисты в M3U8 в Download/Muz On; в Music или iTunes: Файл → Медиатека → Импортировать плейлист</string>
+    <string name="s_playlist_files">Плейлисты в папке музыки</string>
+    <string name="playlist_files_on">Избранное и ваши плейлисты сохраняются в M3U8 в Music/Playlists</string>
+    <string name="playlist_files_off">Нажмите, чтобы выбрать папку музыки заново и разрешить запись</string>
     <string name="s_seek_step">Удержание «назад/вперёд» перематывает на</string>
     <string name="s_equalizer">Эквалайзер</string>
     <string name="seconds_whole">%1$d с</string>
@@ -178,5 +189,11 @@
         <item quantity="few">%d альбома</item>
         <item quantity="many">%d альбомов</item>
         <item quantity="other">%d альбома</item>
+    </plurals>
+    <plurals name="playlists_exported">
+        <item quantity="one">%d плейлист сохранён в Download/Muz On</item>
+        <item quantity="few">%d плейлиста сохранены в Download/Muz On</item>
+        <item quantity="many">%d плейлистов сохранено в Download/Muz On</item>
+        <item quantity="other">%d плейлиста сохранено в Download/Muz On</item>
     </plurals>
 </resources>

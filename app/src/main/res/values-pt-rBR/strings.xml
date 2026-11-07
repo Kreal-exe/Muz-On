@@ -150,6 +150,17 @@
     <string name="covers_cleared">%1$s liberados</string>
     <string name="clear">Limpar</string>
     <string name="reset">Redefinir</string>
+    <string name="queue_clear">Limpar</string>
+    <string name="s_library_file">Biblioteca do Music</string>
+    <string name="library_file_default">Music/Music Library.musiclibrary na pasta de música</string>
+    <string name="s_show_missing">Mostrar músicas que não estão no celular</string>
+    <string name="s_show_missing_hint">Da biblioteca do Mac, em cinza; não tocam</string>
+    <string name="favourites">Favoritas</string>
+    <string name="s_export">Exportar playlists para o Music</string>
+    <string name="s_export_hint">Suas playlists em M3U8 em Download/Muz On; no Music ou iTunes: Arquivo → Biblioteca → Importar Playlist</string>
+    <string name="s_playlist_files">Playlists na pasta de música</string>
+    <string name="playlist_files_on">Favoritas e suas playlists são salvas em M3U8 em Music/Playlists</string>
+    <string name="playlist_files_off">Toque para escolher a pasta de música de novo e permitir salvar</string>
     <string name="s_seek_step">Segurar anterior/próxima pula</string>
     <string name="s_equalizer">Equalizador</string>
     <string name="seconds_whole">%1$d s</string>
@@ -174,5 +185,9 @@
     <plurals name="albums">
         <item quantity="one">%d álbum</item>
         <item quantity="other">%d álbuns</item>
+    </plurals>
+    <plurals name="playlists_exported">
+        <item quantity="one">%d playlist salva em Download/Muz On</item>
+        <item quantity="other">%d playlists salvas em Download/Muz On</item>
     </plurals>
 </resources>

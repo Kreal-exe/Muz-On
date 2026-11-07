@@ -150,6 +150,17 @@
     <string name="covers_cleared">%1$s 확보됨</string>
     <string name="clear">지우기</string>
     <string name="reset">초기화</string>
+    <string name="queue_clear">비우기</string>
+    <string name="s_library_file">음악 보관함</string>
+    <string name="library_file_default">음악 폴더의 Music/Music Library.musiclibrary</string>
+    <string name="s_show_missing">휴대폰에 없는 노래 표시</string>
+    <string name="s_show_missing_hint">Mac 보관함에서, 회색으로; 재생 불가</string>
+    <string name="favourites">즐겨찾기</string>
+    <string name="s_export">Music용 재생목록 내보내기</string>
+    <string name="s_export_hint">재생목록을 M3U8로 Download/Muz On에; Music 또는 iTunes에서 파일 → 보관함 → 재생목록 가져오기</string>
+    <string name="s_playlist_files">음악 폴더의 재생목록</string>
+    <string name="playlist_files_on">즐겨찾기와 재생목록을 Music/Playlists에 M3U8로 저장합니다</string>
+    <string name="playlist_files_off">탭하여 음악 폴더를 다시 선택하고 저장을 허용하세요</string>
     <string name="s_seek_step">길게 눌러 이동</string>
     <string name="s_equalizer">이퀄라이저</string>
     <string name="seconds_whole">%1$d초</string>
@@ -172,5 +183,8 @@
     </plurals>
     <plurals name="albums">
         <item quantity="other">앨범 %d개</item>
+    </plurals>
+    <plurals name="playlists_exported">
+        <item quantity="other">재생목록 %d개를 Download/Muz On에 저장했습니다</item>
     </plurals>
 </resources>

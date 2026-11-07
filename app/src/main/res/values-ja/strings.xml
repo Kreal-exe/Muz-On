@@ -150,6 +150,17 @@
     <string name="covers_cleared">%1$s を解放しました</string>
     <string name="clear">消去</string>
     <string name="reset">リセット</string>
+    <string name="queue_clear">クリア</string>
+    <string name="s_library_file">ミュージックライブラリ</string>
+    <string name="library_file_default">音楽フォルダ内の Music/Music Library.musiclibrary</string>
+    <string name="s_show_missing">端末にない曲も表示</string>
+    <string name="s_show_missing_hint">Mac のライブラリから、灰色で表示。再生不可</string>
+    <string name="favourites">お気に入り</string>
+    <string name="s_export">Music 用にプレイリストを書き出す</string>
+    <string name="s_export_hint">プレイリストを M3U8 で Download/Muz On に。Music や iTunes の「ファイル → ライブラリ → プレイリストを読み込む」で取り込めます</string>
+    <string name="s_playlist_files">音楽フォルダのプレイリスト</string>
+    <string name="playlist_files_on">お気に入りとプレイリストを Music/Playlists に M3U8 で保存します</string>
+    <string name="playlist_files_off">タップして音楽フォルダを選び直し、保存を許可します</string>
     <string name="s_seek_step">長押しでスキップする秒数</string>
     <string name="s_equalizer">イコライザー</string>
     <string name="seconds_whole">%1$d秒</string>
@@ -172,5 +183,8 @@
     </plurals>
     <plurals name="albums">
         <item quantity="other">%dアルバム</item>
+    </plurals>
+    <plurals name="playlists_exported">
+        <item quantity="other">%d 件のプレイリストを Download/Muz On に保存しました</item>
     </plurals>
 </resources>

@@ -13,12 +13,24 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         super.onCreate(savedInstanceState)
         preferFastestMode()
+        lockPortraitOnPhone()
         setContent { AppRoot() }
     }
 
     override fun onConfigurationChanged(newConfig: Configuration) {
         super.onConfigurationChanged(newConfig)
         preferFastestMode() // each screen of a foldable has its own display modes
+        lockPortraitOnPhone()
+    }
+
+    /**
+     * On a phone-sized screen (the outer screen of a foldable included) the layout is made for
+     * portrait, so the app stays upright; on the inner screen of a foldable or a tablet it turns freely.
+     */
+    private fun lockPortraitOnPhone() {
+        val narrow = resources.configuration.smallestScreenWidthDp < 600
+        val wanted = if (narrow) android.content.pm.ActivityInfo.SCREEN_ORIENTATION_PORTRAIT else android.content.pm.ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+        if (requestedOrientation != wanted) requestedOrientation = wanted
     }
 
     /** The phone may otherwise hold the screen at 60 Hz for an app it does not know. */

@@ -150,6 +150,17 @@
     <string name="covers_cleared">%1$s vrijgemaakt</string>
     <string name="clear">Wissen</string>
     <string name="reset">Herstellen</string>
+    <string name="queue_clear">Wissen</string>
+    <string name="s_library_file">Music-bibliotheek</string>
+    <string name="library_file_default">Music/Music Library.musiclibrary in de muziekmap</string>
+    <string name="s_show_missing">Nummers tonen die niet op de telefoon staan</string>
+    <string name="s_show_missing_hint">Uit de Mac-bibliotheek, grijs; niet af te spelen</string>
+    <string name="favourites">Favorieten</string>
+    <string name="s_export">Afspeellijsten exporteren voor Music</string>
+    <string name="s_export_hint">Je lijsten als M3U8 in Download/Muz On; in Music of iTunes: Archief → Bibliotheek → Importeer afspeellijst</string>
+    <string name="s_playlist_files">Afspeellijsten in de muziekmap</string>
+    <string name="playlist_files_on">Favorieten en je lijsten worden als M3U8 opgeslagen in Music/Playlists</string>
+    <string name="playlist_files_off">Tik om de muziekmap opnieuw te kiezen en opslaan toe te staan</string>
     <string name="s_seek_step">Vorige/volgende vasthouden springt</string>
     <string name="s_equalizer">Equalizer</string>
     <string name="seconds_whole">%1$d s</string>
@@ -174,5 +185,9 @@
     <plurals name="albums">
         <item quantity="one">%d album</item>
         <item quantity="other">%d albums</item>
+    </plurals>
+    <plurals name="playlists_exported">
+        <item quantity="one">%d afspeellijst opgeslagen in Download/Muz On</item>
+        <item quantity="other">%d afspeellijsten opgeslagen in Download/Muz On</item>
     </plurals>
 </resources>

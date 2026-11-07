@@ -107,6 +107,7 @@ object Blocks {
     val accents = listOf(
         Color(0xFFFF5A1F), Violet, Pink, Teal, Color(0xFF2F80FF), Color(0xFF9BC21A), Yellow,
         Color(0xFFFB8C00), Color(0xFF607D8B), Color(0xFFE53935), Color(0xFF3F51B5), Color(0xFF43A047),
+        Color(0xFF00B8D4), Color(0xFFD500F9),
     )
 }
 

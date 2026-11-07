@@ -1,10 +1,31 @@
 package dev.kreal.muzon.ui
 
+import kotlinx.coroutines.flow.first
+
+import androidx.compose.runtime.mutableStateOf
+
+import androidx.compose.ui.graphics.graphicsLayer
+
+import androidx.compose.foundation.layout.fillMaxSize
+
+import androidx.compose.foundation.layout.offset
+
+import androidx.compose.foundation.layout.requiredSize
+
+import androidx.compose.runtime.derivedStateOf
+
+import androidx.compose.runtime.mutableFloatStateOf
+
+import androidx.compose.foundation.gestures.awaitFirstDown
+
+import androidx.compose.foundation.gestures.awaitEachGesture
+
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.gestures.animateScrollBy
 import androidx.compose.foundation.gestures.scrollBy
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
@@ -73,25 +94,33 @@ fun Modifier.block(color: Color, theme: AppTheme, corner: Dp): Modifier = when (
         onDrawBehind { drawRoundRect(brush, cornerRadius = radius) }
     }
     AppTheme.Aero -> this.clip(RoundedCornerShape(corner)).drawWithCache {
+        // Glass: the colour itself under a highlight on the top half and a faint glow at the bottom.
+        // Nothing is darkened at the top edge, so no dark rim shows above the highlight, whatever the
+        // colour, a near-black play button included.
         val body = Brush.verticalGradient(
-            0f to Color.Black.copy(alpha = 0.18f).compositeOver(color),
-            0.55f to color,
-            1f to Color.White.copy(alpha = 0.30f).compositeOver(color),
+            0f to color,
+            0.6f to color,
+            1f to Color.White.copy(alpha = 0.22f).compositeOver(color),
         )
+        // The highlight fades out to nothing at its lower edge: a hard edge there reads as a dark band
+        // across the block, worst on a dark one.
+        val glossHeight = size.height * 0.55f
         val gloss = Brush.verticalGradient(
-            0f to Color.White.copy(alpha = 0.62f),
-            1f to Color.White.copy(alpha = 0.10f),
-            endY = size.height * 0.5f,
+            0f to Color.White.copy(alpha = 0.42f),
+            0.6f to Color.White.copy(alpha = 0.14f),
+            1f to Color.White.copy(alpha = 0f),
+            endY = glossHeight,
         )
-        val radius = CornerRadius(corner.toPx())
-        val inset = 3.dp.toPx()
+        val radius = CornerRadius(corner.toPx().coerceAtMost(minOf(size.width, size.height) / 2))
+        val inset = 0f
         onDrawBehind {
             drawRoundRect(body, cornerRadius = radius)
+            // The highlight follows the block's own outline at the top and ends in a soft curve.
             drawRoundRect(
                 gloss,
                 topLeft = Offset(inset, inset),
-                size = Size(size.width - inset * 2, size.height * 0.48f),
-                cornerRadius = CornerRadius(radius.x - inset),
+                size = Size(size.width - inset * 2, glossHeight - inset),
+                cornerRadius = (radius.x - inset).coerceAtLeast(0f).let { r -> CornerRadius(r, minOf(r, (glossHeight - inset) / 2)) },
             )
         }
     }
@@ -186,32 +215,126 @@ fun formatLong(ms: Long): String {
 fun formatHours(tracks: List<Track>): Int = (tracks.sumOf { it.durationMs } / 3_600_000L).toInt()
 
 /** The letter rail of the iPod song list: slide a finger to jump. Letters come from the list itself. */
+/**
+ * The alphabet along the right edge of a list sorted by name. A touch jumps to its letter at once;
+ * sliding the finger runs through the letters with a light tick at each, a large bubble beside the
+ * finger shows the letter, and the letter of what is on screen stays lit.
+ */
 @Composable
 fun LetterRail(letters: List<Pair<Char, Int>>, state: LazyListState, offset: Int, modifier: Modifier = Modifier) {
     if (letters.size < 2) return
     val scope = rememberCoroutineScope()
     val p = LocalPalette.current
     val density = LocalDensity.current
+    val haptics = androidx.compose.ui.platform.LocalHapticFeedback.current
+    val prefs = (androidx.compose.ui.platform.LocalContext.current.applicationContext as dev.kreal.muzon.MuzOnApp).prefs
     var heightPx by remember { mutableIntStateOf(1) }
-    Column(
-        modifier
-            .width(22.dp)
-            .fillMaxHeight()
-            .padding(vertical = 6.dp)
-            .onSizeChanged { heightPx = it.height }
-            .pointerInput(letters) {
-                detectVerticalDragGestures { change, _ ->
-                    val i = ((change.position.y / heightPx) * letters.size).toInt().coerceIn(0, letters.lastIndex)
-                    scope.launch { state.scrollToItem(letters[i].second + offset) }
+    var touched by remember { mutableIntStateOf(-1) }
+    var touchY by remember { mutableFloatStateOf(0f) }
+    var scrollJob by remember { mutableStateOf<kotlinx.coroutines.Job?>(null) }
+    // The letter of the first row on screen, lit while nobody touches the rail.
+    val visible by remember(letters) {
+        derivedStateOf {
+            val first = state.firstVisibleItemIndex - offset
+            letters.indexOfLast { it.second <= first }.coerceAtLeast(0)
+        }
+    }
+    val lit = if (touched >= 0) touched else visible
+    // Letters shown: all when they fit, otherwise every second or third, evenly. Worked out from the
+    // rail's current height on each call: the touch handler outlives the first, unmeasured layout.
+    fun stepFor(height: Int) = with(density) { (height / 10.dp.toPx()).toInt().coerceAtLeast(1) }.let { fit -> (letters.size + fit - 1) / fit }
+    val step = stepFor(heightPx)
+    val shown = (letters.size + step - 1) / step
+    fun jump(y: Float) {
+        touchY = y
+        val step = stepFor(heightPx)
+        val shown = (letters.size + step - 1) / step
+        // The touch picks the letter drawn under the finger, not a neighbour of it.
+        val i = (((y / heightPx) * shown).toInt().coerceIn(0, shown - 1) * step).coerceAtMost(letters.lastIndex)
+        if (i != touched) {
+            touched = i
+            if (prefs.haptics) haptics.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.TextHandleMove)
+            // A short glide to the letter; the next letter cancels it, so a fast slide never lags behind.
+            scrollJob?.cancel()
+            scrollJob = scope.launch {
+                // The first letter means the very top, header included.
+                val target = if (i == 0) 0 else letters[i].second + offset
+                if (kotlin.math.abs(state.firstVisibleItemIndex - target) > 60) state.scrollToItem(target + if (target > state.firstVisibleItemIndex) -8 else 8)
+                state.animateScrollToItem(target)
+            }
+        }
+    }
+    Box(modifier.width(24.dp).fillMaxHeight().padding(vertical = 6.dp)) {
+        Column(
+            Modifier
+                .fillMaxSize()
+                .onSizeChanged { heightPx = it.height.coerceAtLeast(1) }
+                .pointerInput(letters) {
+                    awaitEachGesture {
+                        val down = awaitFirstDown()
+                        down.consume()
+                        jump(down.position.y)
+                        do {
+                            val event = awaitPointerEvent()
+                            val change = event.changes.firstOrNull() ?: break
+                            if (change.pressed) {
+                                change.consume()
+                                jump(change.position.y)
+                            }
+                        } while (change.pressed)
+                        touched = -1
+                    }
+                },
+            verticalArrangement = Arrangement.SpaceEvenly,
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            // While a finger is on the rail the letters near it grow and lean out towards the list, as
+            // in the Android contacts scroller, easing back when it lifts.
+            val press by androidx.compose.animation.core.animateFloatAsState(if (touched >= 0) 1f else 0f, androidx.compose.animation.core.tween(160), label = "press")
+            letters.forEachIndexed { i, (c, _) ->
+                val on = i == lit || (step > 1 && lit in i until i + step)
+                if (i % step == 0) {
+                    // Every letter gets a place; on a short screen they are just set closer and smaller.
+                    val cell = with(density) { (heightPx.toFloat() / shown).toDp() }.coerceIn(10.dp, 18.dp)
+                    Box(
+                        Modifier
+                            .size(cell)
+                            .graphicsLayer {
+                                val centre = (i / step + 0.5f) / shown * heightPx
+                                val near = (1f - kotlin.math.abs(centre - touchY) / (heightPx * 0.18f)).coerceIn(0f, 1f) * press
+                                val grow = 1f + 0.9f * near * near
+                                scaleX = grow
+                                scaleY = grow
+                                translationX = -26.dp.toPx() * near * near
+                            }
+                            .clip(CircleShape)
+                            .background(if (on) p.accent else Color.Transparent),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        val size = (cell.value * 0.62f).coerceIn(8f, 11f)
+                        Txt(
+                            c.toString(),
+                            Type.tiny.copy(fontWeight = androidx.compose.ui.text.font.FontWeight(700), fontSize = androidx.compose.ui.unit.TextUnit(size, androidx.compose.ui.unit.TextUnitType.Sp), lineHeight = androidx.compose.ui.unit.TextUnit(size, androidx.compose.ui.unit.TextUnitType.Sp)),
+                            if (on) Blocks.on(p.accent) else p.muted,
+                        )
+                    }
                 }
-            },
-        verticalArrangement = Arrangement.SpaceEvenly,
-        horizontalAlignment = Alignment.CenterHorizontally,
-    ) {
-        val shown = with(density) { (heightPx / 14.dp.toPx()).toInt().coerceAtLeast(1) }
-        val step = (letters.size / shown).coerceAtLeast(0) + 1
-        letters.forEachIndexed { i, (c, _) ->
-            if (i % step == 0) Txt(c.toString(), Type.tiny, p.muted)
+            }
+        }
+        if (touched >= 0) {
+            val bubble = 64.dp
+            Box(
+                Modifier
+                    // Next to the finger, but never past the ends of the rail.
+                    .offset {
+                        val y = (touchY - bubble.toPx() / 2).coerceIn(0f, (heightPx - bubble.toPx()).coerceAtLeast(0f))
+                        androidx.compose.ui.unit.IntOffset(-(bubble + 14.dp).roundToPx(), y.toInt())
+                    }
+                    .requiredSize(bubble)
+                    .clip(CircleShape)
+                    .background(p.accent),
+                contentAlignment = Alignment.Center,
+            ) { Txt(letters[touched].first.toString(), Type.hero, Blocks.on(p.accent)) }
         }
     }
 }
@@ -220,12 +343,10 @@ fun lettersOf(names: List<String>): List<Pair<Char, Int>> {
     val out = ArrayList<Pair<Char, Int>>()
     var last: Char? = null
     names.forEachIndexed { i, n ->
-        val first = n.trim().firstOrNull { it.isLetterOrDigit() }?.uppercaseChar()
-        val c = when {
-            first == null -> '#'
-            first.isDigit() -> '#'
-            else -> first
-        }
+        // A title that starts with a sign or a digit ("$HRIMP", "'70s", "#1") sorts before the letters,
+        // so it belongs to '#', not to the letter after the sign: that letter would appear out of order.
+        val first = n.trim().firstOrNull()?.uppercaseChar()
+        val c = if (first == null || !first.isLetter()) '#' else first
         if (c != last) {
             if (out.none { it.first == c }) out += c to i
             last = c
@@ -242,8 +363,10 @@ fun lettersOf(names: List<String>): List<Pair<Char, Int>> {
  * until the line's top is back on the upper one. A line the reader scrolled away from is left alone.
  * [first] places the line on the upper mark once, when the list opens.
  */
-suspend fun androidx.compose.foundation.lazy.LazyListState.followLine(index: Int, first: Boolean) {
+suspend fun androidx.compose.foundation.lazy.LazyListState.followLine(index: Int, first: Boolean, readerAway: Boolean = false) {
     if (index < 0) return
+    // The list must be laid out first, or the line lands at the top edge instead of on the mark.
+    if (layoutInfo.viewportSize.height <= 0) androidx.compose.runtime.snapshotFlow { layoutInfo.viewportSize.height }.first { it > 0 }
     val info = layoutInfo
     val visible = info.visibleItemsInfo
     val viewTop = info.viewportStartOffset
@@ -255,17 +378,31 @@ suspend fun androidx.compose.foundation.lazy.LazyListState.followLine(index: Int
         scrollBy(-(height * TOP_MARK - info.beforeContentPadding))
         return
     }
-    if (isScrollInProgress) return
+    if (isScrollInProgress || readerAway) return
     val line = visible.sumOf { it.size } / visible.size
     val item = visible.firstOrNull { it.index == index }
-    // The line just below the view: its top is where the line before it ends.
-    val top = item?.offset ?: visible.firstOrNull { it.index == index - 1 }?.let { it.offset + it.size } ?: return
+    val topMark0 = viewTop + height * TOP_MARK
+    val glide = androidx.compose.animation.core.tween<Float>(650, easing = androidx.compose.animation.core.CubicBezierEasing(0.25f, 0.1f, 0.25f, 1f))
+    // The sung line is out of sight (after a seek, or the list was opened mid-song): bring it back to
+    // the mark, gliding when it is near, jumping when it is far.
+    val below = visible.firstOrNull { it.index == index - 1 }?.let { it.offset + it.size }
+    if ((item == null && below == null) || (item != null && item.offset + item.size <= viewTop)) {
+        val first = visible.first().index
+        if (kotlin.math.abs(index - first) <= 8) {
+            val estimate = (item?.offset ?: (visible.first().offset + (index - first) * line)).toFloat()
+            animateScrollBy(estimate - topMark0, glide)
+        } else {
+            scrollToItem(index)
+            scrollBy(-(height * TOP_MARK - info.beforeContentPadding))
+        }
+        return
+    }
+    val top = item?.offset ?: below ?: return
     val bottom = top + (item?.size ?: line)
-    if (top < viewTop) return // the reader is further down
     val roomBelow = maxOf(2f * line, height * ROOM_BELOW)
     val topMark = viewTop + height * TOP_MARK
     if (bottom > viewEnd - roomBelow) {
-        animateScrollBy(top - topMark, androidx.compose.animation.core.tween(650, easing = androidx.compose.animation.core.CubicBezierEasing(0.25f, 0.1f, 0.25f, 1f)))
+        animateScrollBy(top - topMark, glide)
     }
 }
 
