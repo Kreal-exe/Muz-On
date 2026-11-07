@@ -9,7 +9,7 @@ import androidx.compose.material.icons.rounded.Folder
 import androidx.compose.material.icons.rounded.History
 import androidx.compose.material.icons.rounded.Whatshot
 import androidx.compose.material.icons.rounded.LibraryMusic
-import androidx.compose.material.icons.rounded.Mic
+import androidx.compose.material.icons.rounded.Person
 import androidx.compose.material.icons.rounded.MusicNote
 import androidx.compose.material.icons.rounded.Schedule
 import androidx.compose.material.icons.rounded.Search
@@ -35,7 +35,7 @@ enum class GlyphKind { Playlists, Artists, Albums, Songs, Recent, Genres, Search
 
 private fun GlyphKind.vector(): ImageVector = when (this) {
     GlyphKind.Playlists -> Icons.AutoMirrored.Rounded.PlaylistPlay
-    GlyphKind.Artists -> Icons.Rounded.Mic
+    GlyphKind.Artists -> Icons.Rounded.Person
     GlyphKind.Albums -> Icons.Rounded.LibraryMusic
     GlyphKind.Songs -> Icons.Rounded.MusicNote
     GlyphKind.Recent -> Icons.Rounded.Schedule
@@ -81,13 +81,12 @@ private fun DrawScope.drawDetailed(kind: GlyphKind, tint: Color) {
             }
         }
         GlyphKind.Artists -> {
-            drawRoundRect(metal, Offset(10.5f * u, 13 * u), Size(3 * u, 8 * u), CornerRadius(1 * u))
-            drawRoundRect(metal, Offset(7 * u, 20 * u), Size(10 * u, 2 * u), CornerRadius(1 * u))
-            drawRoundRect(metal, Offset(7 * u, 2 * u), Size(10 * u, 13 * u), CornerRadius(5 * u))
-            for (x in 0..3) for (y in 0..4) {
-                drawCircle(ink, 0.55f * u, Offset((8.5f + x * 2.3f) * u, (4.6f + y * 2.1f) * u))
-            }
-            drawOval(Color.White.copy(alpha = 0.75f), Offset(8.4f * u, 2.8f * u), Size(4.5f * u, 2.2f * u))
+            // Two people, one behind the other: the artists.
+            drawCircle(Blocks.Violet, 3.3f * u, Offset(16 * u, 7.2f * u))
+            drawRoundRect(Blocks.Violet, Offset(10.5f * u, 12 * u), Size(11 * u, 9 * u), CornerRadius(5 * u))
+            drawCircle(metal, 4 * u, Offset(9 * u, 8.3f * u))
+            drawRoundRect(metal, Offset(2 * u, 14 * u), Size(14 * u, 8.5f * u), CornerRadius(6 * u))
+            drawOval(Color.White.copy(alpha = 0.7f), Offset(6.6f * u, 5.4f * u), Size(3.4f * u, 1.8f * u))
         }
         GlyphKind.Albums -> {
             drawRoundRect(Blocks.Pink, Offset(7 * u, 2.5f * u), Size(14.5f * u, 14.5f * u), CornerRadius(2 * u))

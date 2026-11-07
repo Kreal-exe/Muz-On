@@ -204,12 +204,7 @@ private fun CompactShell(vm: AppViewModel, library: Library) {
     BackHandling(vm)
     Box(Modifier.fillMaxSize()) {
         CompositionLocalProvider(LocalBottomSpace provides space) {
-            StackHost(
-                vm.nav,
-                holder,
-                // Nothing to draw under a full player, and no scaling of a whole list on every frame.
-                Modifier.graphicsLayer { alpha = if (vm.sheet >= 1f) 0f else 1f },
-            ) { route -> RouteContent(route, vm, library) }
+            TabPager(vm, holder, Modifier.graphicsLayer { alpha = if (vm.sheet >= 1f) 0f else 1f }) { route -> RouteContent(route, vm, library) }
         }
         if (hasTrack) {
             Box(
@@ -222,8 +217,28 @@ private fun CompactShell(vm: AppViewModel, library: Library) {
             )
         }
         CompactPlayer(vm, tabsHeight)
+        vm.addToPlaylist?.let { tracks -> AddToPlaylistDialog(vm, tracks) { vm.addToPlaylist = null } }
+        vm.renamingPlaylist?.let { pl ->
+            PlaylistNameDialog(stringResource(R.string.playlist_rename), pl.name, stringResource(R.string.done), { vm.renamingPlaylist = null }) { name ->
+                vm.renamingPlaylist = null
+                vm.renamePlaylist(pl.id, name)
+            }
+        }
+        vm.deletingPlaylist?.let { pl ->
+            ConfirmDialog(stringResource(R.string.playlist_delete), stringResource(R.string.playlist_delete_confirm, pl.name), stringResource(R.string.delete), { vm.deletingPlaylist = null }) {
+                vm.deletingPlaylist = null
+                vm.deletePlaylist(pl.id)
+            }
+        }
         vm.collectionMenu?.let { tracks ->
-            Box(Modifier.align(Alignment.Center)) { CollectionMenu(vm, tracks, true) { if (!it) vm.collectionMenu = null } }
+            Box(Modifier.align(Alignment.Center)) {
+                CollectionMenu(vm, tracks, true, vm.collectionPlaylist) {
+                    if (!it) {
+                        vm.collectionMenu = null
+                        vm.collectionPlaylist = null
+                    }
+                }
+            }
         }
         TabBar(
             vm,
@@ -269,7 +284,8 @@ private fun BackHandling(vm: AppViewModel) {
         }
     }
     // From a tab's first screen, back goes home; only from home does it leave the app.
-    BackHandler(enabled = !sheetOpen && !vm.nav.canPop && vm.nav.tab != Tab.Home) { vm.nav.select(Tab.Home) }
+    // Back goes to the screen seen before: the tab came from, else Home, then out of the app.
+    BackHandler(enabled = !sheetOpen && !vm.nav.canPop && vm.nav.tab != Tab.Home) { vm.nav.backToPreviousTab() }
 }
 
 @Composable
@@ -518,5 +534,38 @@ fun rememberFolderPicker(vm: AppViewModel): androidx.activity.compose.ManagedAct
             vm.prefs.setTree(uri.toString())
             vm.refreshLibrary(force = true)
         }
+    }
+}
+
+/**
+ * The tabs side by side: a sideways swipe moves to the next one. Choosing a tab below, or a place on
+ * Home, slides one page as well, from whichever side it is on, the same move as opening a page; a tab
+ * further away is brought next to the current one first, so no list in between gets built.
+ */
+@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
+@Composable
+private fun TabPager(vm: AppViewModel, holder: androidx.compose.runtime.saveable.SaveableStateHolder, modifier: Modifier, content: @Composable (Route) -> Unit) {
+    val tabs = vm.tabs()
+    val pager = androidx.compose.foundation.pager.rememberPagerState(initialPage = tabs.indexOf(vm.nav.tab).coerceAtLeast(0)) { tabs.size }
+    LaunchedEffect(vm.nav.tab, tabs) {
+        val target = tabs.indexOf(vm.nav.tab)
+        if (target < 0 || pager.currentPage == target || pager.isScrollInProgress) return@LaunchedEffect
+        // One quick run across every tab in between, the farther the slightly longer.
+        val pages = kotlin.math.abs(pager.currentPage - target)
+        pager.animateScrollToPage(
+            target,
+            animationSpec = androidx.compose.animation.core.tween(220 + 70 * pages, easing = androidx.compose.animation.core.FastOutSlowInEasing),
+        )
+    }
+    LaunchedEffect(pager, tabs) {
+        androidx.compose.runtime.snapshotFlow { pager.settledPage }.collect { page -> tabs.getOrNull(page)?.let { vm.nav.showTab(it) } }
+    }
+    androidx.compose.foundation.pager.HorizontalPager(
+        state = pager,
+        modifier = modifier.fillMaxSize(),
+        beyondViewportPageCount = 0,
+        key = { tabs[it].name },
+    ) { page ->
+        StackHost(vm.nav, holder, tab = tabs[page], content = content)
     }
 }

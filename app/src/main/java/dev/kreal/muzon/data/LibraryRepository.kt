@@ -45,6 +45,65 @@ class LibraryRepository(private val context: Context, private val prefs: Prefs) 
     /** The library as read, before the hearts set on this phone are laid over it. */
     private var base: Library? = null
 
+    // ---- Playlists made in the app, kept in its own folder beside the list of hearts.
+
+    private val ownFile get() = File(context.getExternalFilesDir(null) ?: context.filesDir, "playlists.json")
+    private var own: List<Playlist>? = null
+
+    private fun ownPlaylists(): List<Playlist> = own ?: runCatching {
+        val array = org.json.JSONArray(ownFile.readText())
+        (0 until array.length()).map { i ->
+            val o = array.getJSONObject(i)
+            val ids = o.getJSONArray("tracks")
+            Playlist(o.getString("id"), o.getString("name"), (0 until ids.length()).map { ids.getString(it) }, hasExactOrder = true, own = true)
+        }
+    }.getOrDefault(emptyList()).also { own = it }
+
+    private fun saveOwn(list: List<Playlist>) {
+        own = list
+        val array = org.json.JSONArray()
+        list.forEach { pl ->
+            array.put(org.json.JSONObject().put("id", pl.id).put("name", pl.name).put("tracks", org.json.JSONArray(pl.trackIds)))
+        }
+        val tmp = File(ownFile.path + ".tmp")
+        tmp.writeText(array.toString(1))
+        tmp.renameTo(ownFile)
+    }
+
+    /** The library as shown: hearts laid over, then the app's own playlists after those of Music. */
+    private fun present(read: Library): Library {
+        val shown = withFavorites(read)
+        val mine = ownPlaylists()
+        if (mine.isEmpty()) return shown
+        return Library(shown.source, shown.tracks, shown.playlists + mine, shown.databaseTime, shown.failure).also { it.prepare() }
+    }
+
+    private suspend fun changeOwn(change: (List<Playlist>) -> List<Playlist>) = withContext(Dispatchers.IO) {
+        mutex.withLock {
+            saveOwn(change(ownPlaylists()))
+            base?.let { state.value = present(it) }
+        }
+    }
+
+    suspend fun createPlaylist(name: String, trackIds: List<String>): String {
+        val id = "own-" + java.util.UUID.randomUUID().toString()
+        changeOwn { it + Playlist(id, name.trim(), trackIds.distinct(), hasExactOrder = true, own = true) }
+        return id
+    }
+
+    /** Adds tracks at the end, leaving out those already in the playlist. */
+    suspend fun addToPlaylist(id: String, trackIds: List<String>) = changeOwn { list ->
+        list.map { pl -> if (pl.id == id) pl.copy(trackIds = pl.trackIds + trackIds.distinct().filter { it !in pl.trackIds }) else pl }
+    }
+
+    suspend fun removeFromPlaylist(id: String, trackId: String) = changeOwn { list ->
+        list.map { pl -> if (pl.id == id) pl.copy(trackIds = pl.trackIds - trackId) else pl }
+    }
+
+    suspend fun renamePlaylist(id: String, name: String) = changeOwn { list -> list.map { if (it.id == id) it.copy(name = name.trim()) else it } }
+
+    suspend fun deletePlaylist(id: String) = changeOwn { list -> list.filter { it.id != id } }
+
     /**
      * Sets or clears the heart of [track]. The change shows at once, smart playlists that depend on
      * it follow, and it is written down for the Mac, where tools/sync-library.sh applies it.
@@ -54,7 +113,7 @@ class LibraryRepository(private val context: Context, private val prefs: Prefs) 
             val read = base ?: return@withLock
             prefs.setFavoriteOverride(track.id, favorite.takeIf { it != read.byId[track.id]?.favorite })
             writeFavoriteChanges(read)
-            state.value = withFavorites(read)
+            state.value = present(read)
         }
     }
 
@@ -108,7 +167,7 @@ class LibraryRepository(private val context: Context, private val prefs: Prefs) 
             // A heart the Mac already took over needs no override any more.
             prefs.favoriteOverrides().forEach { (id, on) -> if (library.byId[id]?.favorite == on) prefs.setFavoriteOverride(id, null) }
             writeFavoriteChanges(library)
-            state.value = withFavorites(library)
+            state.value = present(library)
         }
     }
 

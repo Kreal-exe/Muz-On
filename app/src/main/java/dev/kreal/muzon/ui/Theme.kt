@@ -102,7 +102,12 @@ object Blocks {
     }
 
     /** Accent colours offered in the settings; the first is the default. */
-    val accents = listOf(Color(0xFFFF5A1F), Violet, Pink, Teal, Color(0xFF2F80FF), Color(0xFF9BC21A), Yellow)
+    // New colours go at the end: the setting stores the position. 0xFFFB8C00 is the orange of the
+    // classic player as it was set up on this phone, 0xFF607D8B its blue-grey.
+    val accents = listOf(
+        Color(0xFFFF5A1F), Violet, Pink, Teal, Color(0xFF2F80FF), Color(0xFF9BC21A), Yellow,
+        Color(0xFFFB8C00), Color(0xFF607D8B), Color(0xFFE53935), Color(0xFF3F51B5), Color(0xFF43A047),
+    )
 }
 
 @Composable
