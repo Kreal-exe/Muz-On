@@ -139,6 +139,18 @@ S = {
     "seconds_whole": ["%1$d s", "%1$d с", "%1$d с", "%1$d s", "%1$d s", "%1$d s", "%1$d s", "%1$d s", "%1$d s", "%1$d sn", "%1$d s", "%1$d秒", "%1$d초", "%1$d 秒"],
     "s_about": ["About", "О приложении", "Про застосунок", "Über", "À propos", "Acerca de", "Sobre", "Informazioni", "O aplikacji", "Hakkında", "Over", "このアプリについて", "정보", "关于"],
     "s_privacy": ["Privacy policy", "Политика конфиденциальности", "Політика конфіденційності", "Datenschutz", "Confidentialité", "Privacidad", "Privacidade", "Privacy", "Prywatność", "Gizlilik", "Privacy", "プライバシー", "개인정보처리방침", "隐私政策"],
+    "s_app_icon": ["App icon", "Значок приложения", "Значок застосунку", "App-Symbol", "Icône de l’app", "Icono de la app", "Ícone do app", "Icona dell’app", "Ikona aplikacji", "Uygulama simgesi", "App-pictogram", "アプリアイコン", "앱 아이콘", "应用图标"],
+    "s_app_icon_hint": ["The home screen may take a moment to show the new icon", "Рабочий стол может обновить значок не сразу", "Головний екран може оновити значок не одразу", "Der Startbildschirm zeigt das neue Symbol eventuell erst nach einem Moment", "L’écran d’accueil peut mettre un moment à afficher la nouvelle icône", "La pantalla de inicio puede tardar un momento en mostrar el nuevo icono", "A tela inicial pode levar um momento para mostrar o novo ícone", "La schermata Home potrebbe impiegare un attimo a mostrare la nuova icona", "Ekran główny może potrzebować chwili, by pokazać nową ikonę", "Ana ekranın yeni simgeyi göstermesi biraz sürebilir", "Het startscherm kan even nodig hebben om het nieuwe pictogram te tonen", "ホーム画面に新しいアイコンが表示されるまで少し時間がかかることがあります", "홈 화면에 새 아이콘이 표시되기까지 잠시 걸릴 수 있습니다", "主屏幕可能需要片刻才会显示新图标"],
+    "icon_orange": ["Orange", "Оранжевый", "Помаранчевий", "Orange", "Orange", "Naranja", "Laranja", "Arancione", "Pomarańczowy", "Turuncu", "Oranje", "オレンジ", "주황", "橙色"],
+    "icon_violet": ["Violet", "Фиолетовый", "Фіолетовий", "Violett", "Violet", "Violeta", "Violeta", "Viola", "Fioletowy", "Mor", "Violet", "バイオレット", "보라", "紫色"],
+    "icon_pink": ["Pink", "Розовый", "Рожевий", "Pink", "Rose", "Rosa", "Rosa", "Rosa", "Różowy", "Pembe", "Roze", "ピンク", "분홍", "粉色"],
+    "icon_teal": ["Teal", "Бирюзовый", "Бірюзовий", "Petrol", "Sarcelle", "Verde azulado", "Verde-azulado", "Verde acqua", "Morski", "Camgöbeği", "Petrol", "ティール", "청록", "青色"],
+    "icon_blue": ["Blue", "Синий", "Синій", "Blau", "Bleu", "Azul", "Azul", "Blu", "Niebieski", "Mavi", "Blauw", "ブルー", "파랑", "蓝色"],
+    "icon_black": ["Black", "Чёрный", "Чорний", "Schwarz", "Noir", "Negro", "Preto", "Nero", "Czarny", "Siyah", "Zwart", "ブラック", "검정", "黑色"],
+    "icon_white": ["White", "Белый", "Білий", "Weiß", "Blanc", "Blanco", "Branco", "Bianco", "Biały", "Beyaz", "Wit", "ホワイト", "흰색", "白色"],
+    "icon_sunset": ["Sunset", "Закат", "Захід сонця", "Sonnenuntergang", "Coucher de soleil", "Atardecer", "Pôr do sol", "Tramonto", "Zachód słońca", "Gün batımı", "Zonsondergang", "サンセット", "노을", "日落"],
+    "icon_note": ["Note", "Нота", "Нота", "Note", "Note", "Nota", "Nota", "Nota", "Nuta", "Nota", "Noot", "音符", "음표", "音符"],
+    "icon_wave": ["Sound", "Звук", "Звук", "Klang", "Son", "Sonido", "Som", "Suono", "Dźwięk", "Ses", "Geluid", "サウンド", "사운드", "声音"],
 }
 
 SONGS = {

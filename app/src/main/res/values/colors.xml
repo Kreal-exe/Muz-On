@@ -2,4 +2,10 @@
 <resources>
     <color name="window">#101012</color>
     <color name="icon_bg">#E8542E</color>
+    <color name="icon_bg_violet">#7C4DFF</color>
+    <color name="icon_bg_pink">#E91E63</color>
+    <color name="icon_bg_teal">#13A89E</color>
+    <color name="icon_bg_blue">#2F80FF</color>
+    <color name="icon_bg_black">#111111</color>
+    <color name="icon_bg_white">#FFFFFF</color>
 </resources>
