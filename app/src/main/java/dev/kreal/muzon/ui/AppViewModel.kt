@@ -10,8 +10,6 @@ import androidx.lifecycle.viewModelScope
 import dev.kreal.muzon.MuzOnApp
 import kotlinx.coroutines.launch
 
-enum class PlayerPanel { None, Lyrics, Queue }
-
 class AppViewModel(application: Application) : AndroidViewModel(application) {
     private val app = application as MuzOnApp
     val prefs = app.prefs
@@ -26,7 +24,8 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         get() = sheetState.floatValue
         set(v) { sheetState.floatValue = v }
 
-    var panel by mutableStateOf(PlayerPanel.None)
+    var isWide by mutableStateOf(false)
+    var lyricsOpen by mutableStateOf(true)
 
     fun refreshLibrary(force: Boolean = false) {
         viewModelScope.launch {

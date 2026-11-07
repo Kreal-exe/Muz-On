@@ -167,7 +167,9 @@ private fun Loaded(vm: AppViewModel) {
     }
     val current = library ?: return
     BoxWithConstraints(Modifier.fillMaxSize()) {
-        if (maxWidth >= 600.dp) WideShell(vm, current) else CompactShell(vm, current)
+        val wide = maxWidth >= 600.dp
+        SideEffect { vm.isWide = wide }
+        if (wide) WideShell(vm, current) else CompactShell(vm, current)
     }
 }
 
@@ -233,7 +235,7 @@ private fun BackHandling(vm: AppViewModel) {
             throw e
         }
     }
-    PredictiveBackHandler(enabled = sheetOpen && vm.panel == PlayerPanel.None) { progress ->
+    PredictiveBackHandler(enabled = sheetOpen && !vm.lyricsOpen) { progress ->
         try {
             progress.collect { event -> vm.sheet = 1f - event.progress * 0.25f }
             scope.launch { animate(vm.sheet, 0f, animationSpec = spec) { v, _ -> vm.sheet = v } }
@@ -242,7 +244,7 @@ private fun BackHandling(vm: AppViewModel) {
             throw e
         }
     }
-    BackHandler(enabled = sheetOpen && vm.panel != PlayerPanel.None) { vm.panel = PlayerPanel.None }
+    BackHandler(enabled = sheetOpen && vm.lyricsOpen) { vm.lyricsOpen = false }
     // From a tab's first screen, back goes home; only from home does it leave the app.
     BackHandler(enabled = !sheetOpen && !vm.nav.canPop && vm.nav.tab != Tab.Home) { vm.nav.select(Tab.Home) }
 }
