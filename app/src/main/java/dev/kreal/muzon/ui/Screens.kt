@@ -141,7 +141,7 @@ private fun Place.glyph() = when (this) {
 }
 
 @Composable
-private fun Place.label() = stringResource(
+fun Place.label() = stringResource(
     when (this) {
         Place.Playlists -> R.string.place_playlists
         Place.Artists -> R.string.place_artists
@@ -754,8 +754,9 @@ private fun ArtistsScreen(vm: AppViewModel, library: Library) {
 
 @Composable
 private fun AlbumsScreen(vm: AppViewModel, library: Library) {
+    val columns = vm.prefs.albumColumns
     LazyVerticalGrid(
-        columns = GridCells.Adaptive(104.dp),
+        columns = if (columns > 0) GridCells.Fixed(columns) else GridCells.Adaptive(104.dp),
         modifier = Modifier.fillMaxSize(),
         contentPadding = PaddingValues(start = 10.dp, end = 10.dp, top = statusTop() + 4.dp, bottom = LocalBottomSpace.current + 10.dp),
         horizontalArrangement = Arrangement.spacedBy(8.dp),

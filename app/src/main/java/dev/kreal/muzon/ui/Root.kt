@@ -288,10 +288,34 @@ private fun BackHandling(vm: AppViewModel) {
     BackHandler(enabled = !sheetOpen && !vm.nav.canPop && vm.nav.tab != Tab.Home) { vm.nav.backToPreviousTab() }
 }
 
+/** Every tab in the order the user set, hidden ones included. */
+fun orderedTabs(order: List<String>): List<Tab> {
+    val named = order.mapNotNull { n -> Tab.entries.firstOrNull { it.name == n } }.distinct()
+    return named + Tab.entries.filter { it !in named }
+}
+
+/** The whole order after the shown tabs were rearranged among themselves; hidden ones keep their places. */
+fun withShownOrder(order: List<String>, shown: List<Tab>): List<String> {
+    val next = shown.iterator()
+    return orderedTabs(order).map { if (it in shown && next.hasNext()) next.next() else it }.map { it.name }
+}
+
+/** Navigators that have been sent to their start tab already. */
+private val started = java.util.Collections.newSetFromMap(java.util.WeakHashMap<Navigator, Boolean>())
+
+/**
+ * The tabs in the bar. A tab hidden in settings stays while it is the open one, so the page is not
+ * pulled away from under the finger; it leaves the bar once another tab is chosen.
+ */
 @Composable
 private fun AppViewModel.tabs(): List<Tab> {
-    val named = prefs.tabOrder.mapNotNull { n -> Tab.entries.firstOrNull { it.name == n } }
-    return named + Tab.entries.filter { it !in named }
+    val hidden = prefs.hiddenTabs
+    if (started.add(nav) && prefs.startOnLastTab) {
+        // Before the pager places its first page, so the app opens there rather than sliding to it.
+        val last = Tab.entries.firstOrNull { it.name == prefs.lastTab }
+        if (last != null && last != Tab.Home && last.name !in hidden) nav.select(last)
+    }
+    return orderedTabs(prefs.tabOrder).filter { it == Tab.Home || it == nav.tab || it.name !in hidden }
 }
 
 /**
@@ -306,6 +330,10 @@ private fun TabBar(vm: AppViewModel, modifier: Modifier) {
     var lifted by remember { mutableStateOf<Tab?>(null) }
     val liftX = remember { mutableFloatStateOf(0f) }
     val haptic = androidx.compose.ui.platform.LocalHapticFeedback.current
+    // Remembered for "open on the last tab"; the start tab is already chosen by the time this runs.
+    LaunchedEffect(vm.nav) {
+        androidx.compose.runtime.snapshotFlow { vm.nav.tab }.collect { vm.prefs.lastTab = it.name }
+    }
     BoxWithConstraints(modifier) {
         val slot = constraints.maxWidth.toFloat() / tabs.size
         val currentTabs by androidx.compose.runtime.rememberUpdatedState(tabs)
@@ -344,7 +372,7 @@ private fun TabBar(vm: AppViewModel, modifier: Modifier) {
                             if (target != from) {
                                 val list = currentTabs.toMutableList()
                                 list.add(target, list.removeAt(from))
-                                vm.prefs.updateTabOrder(list.map { it.name })
+                                vm.prefs.updateTabOrder(withShownOrder(vm.prefs.tabOrder, list))
                             }
                         }
                         lifted = null
