@@ -122,7 +122,9 @@ import kotlin.math.abs
 import kotlin.math.max
 import kotlin.math.min
 
-private val sheetSpring = spring<Float>(dampingRatio = 1f, stiffness = 230f)
+// Quick and without a long creeping end: the slower spring kept the whole player sliding for a
+// few hundred milliseconds after it seemed to have arrived, which read as a stutter.
+private val sheetSpring = spring<Float>(dampingRatio = 1f, stiffness = 520f, visibilityThreshold = 0.001f)
 
 /** Saturated flat colour of a track's cover, kept dark enough for its text to read. */
 @Composable
