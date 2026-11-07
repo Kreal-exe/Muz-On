@@ -133,6 +133,18 @@
     <string name="seconds_whole">%1$d 秒</string>
     <string name="s_about">关于</string>
     <string name="s_privacy">隐私政策</string>
+    <string name="s_app_icon">应用图标</string>
+    <string name="s_app_icon_hint">主屏幕可能需要片刻才会显示新图标</string>
+    <string name="icon_orange">橙色</string>
+    <string name="icon_violet">紫色</string>
+    <string name="icon_pink">粉色</string>
+    <string name="icon_teal">青色</string>
+    <string name="icon_blue">蓝色</string>
+    <string name="icon_black">黑色</string>
+    <string name="icon_white">白色</string>
+    <string name="icon_sunset">日落</string>
+    <string name="icon_note">音符</string>
+    <string name="icon_wave">声音</string>
     <plurals name="songs">
         <item quantity="other">%d 首歌曲</item>
     </plurals>
