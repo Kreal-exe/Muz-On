@@ -80,6 +80,7 @@
     <string name="s_online_art_hint">Sends the artist and title of tracks without a picture to Deezer and iTunes</string>
     <string name="s_lyrics_lead">Show lines ahead by</string>
     <string name="seconds_short">%1$.2f s</string>
+    <string name="up_next">Up next</string>
     <string name="s_about">About</string>
     <string name="s_privacy">Privacy policy</string>
     <plurals name="songs">

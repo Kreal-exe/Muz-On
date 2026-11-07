@@ -79,6 +79,7 @@
     <string name="s_online_art_hint">Надсилає виконавця й назву треків без зображення до Deezer та iTunes</string>
     <string name="s_lyrics_lead">Показувати рядок заздалегідь</string>
     <string name="seconds_short">%1$.2f с</string>
+    <string name="up_next">Далі</string>
     <string name="s_about">Про застосунок</string>
     <string name="s_privacy">Політика конфіденційності</string>
     <plurals name="songs">

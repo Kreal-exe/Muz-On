@@ -79,6 +79,7 @@
     <string name="s_online_art_hint">이미지가 없는 곡의 아티스트와 제목을 Deezer 및 iTunes로 보냅니다</string>
     <string name="s_lyrics_lead">가사 미리 표시</string>
     <string name="seconds_short">%1$.2f초</string>
+    <string name="up_next">다음 재생</string>
     <string name="s_about">정보</string>
     <string name="s_privacy">개인정보처리방침</string>
     <plurals name="songs">

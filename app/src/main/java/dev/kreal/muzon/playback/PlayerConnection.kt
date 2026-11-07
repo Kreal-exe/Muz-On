@@ -172,6 +172,7 @@ class PlayerConnection(private val context: Context, private val prefs: Prefs, p
                 .setArtist(t.artist.ifBlank { t.albumArtist })
                 .setAlbumTitle(t.album)
                 .setAlbumArtist(t.albumArtist)
+                .setArtworkUri("${ArtBitmapLoader.SCHEME}:${t.id}".toUri())
                 .build(),
         )
         .build()

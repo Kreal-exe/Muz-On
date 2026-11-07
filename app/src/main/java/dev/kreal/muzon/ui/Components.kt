@@ -165,6 +165,11 @@ fun formatTime(ms: Long): String {
     return "%d:%02d".format(total / 60, total % 60)
 }
 
+fun formatLong(ms: Long): String {
+    val total = (ms / 1000).coerceAtLeast(0)
+    return if (total >= 3600) "%d:%02d:%02d".format(total / 3600, total % 3600 / 60, total % 60) else "%d:%02d".format(total / 60, total % 60)
+}
+
 fun formatHours(tracks: List<Track>): Int = (tracks.sumOf { it.durationMs } / 3_600_000L).toInt()
 
 /** The letter rail of the iPod song list: slide a finger to jump. Letters come from the list itself. */

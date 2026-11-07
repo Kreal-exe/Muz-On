@@ -235,7 +235,11 @@ private fun BackHandling(vm: AppViewModel) {
             throw e
         }
     }
-    PredictiveBackHandler(enabled = sheetOpen && !vm.lyricsOpen) { progress ->
+    val queueRaised by remember { derivedStateOf { vm.queueFull > 0f } }
+    BackHandler(enabled = queueRaised && sheetOpen) {
+        scope.launch { animate(vm.queueFull, 0f, animationSpec = spec) { v, _ -> vm.queueFull = v } }
+    }
+    PredictiveBackHandler(enabled = sheetOpen && !queueRaised) { progress ->
         try {
             progress.collect { event -> vm.sheet = 1f - event.progress * 0.25f }
             scope.launch { animate(vm.sheet, 0f, animationSpec = spec) { v, _ -> vm.sheet = v } }
@@ -244,7 +248,6 @@ private fun BackHandling(vm: AppViewModel) {
             throw e
         }
     }
-    BackHandler(enabled = sheetOpen && vm.lyricsOpen) { vm.lyricsOpen = false }
     // From a tab's first screen, back goes home; only from home does it leave the app.
     BackHandler(enabled = !sheetOpen && !vm.nav.canPop && vm.nav.tab != Tab.Home) { vm.nav.select(Tab.Home) }
 }
