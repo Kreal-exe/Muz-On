@@ -34,6 +34,9 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     /** Tracks of the artist or playlist whose row was held; the menu shows while set. */
     var collectionMenu by mutableStateOf<List<dev.kreal.muzon.data.Track>?>(null)
 
+    /** The display's highest refresh rate, voted for by everything that moves. */
+    var topFrameRate by mutableFloatStateOf(120f)
+
     var isWide by mutableStateOf(false)
     var lyricsOpen by mutableStateOf(false)
 

@@ -62,6 +62,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.res.stringResource
@@ -92,10 +93,15 @@ fun AppRoot() {
             hasAudio = result[audioPermission] == true
         }
         val view = LocalView.current
-        if (Build.VERSION.SDK_INT >= 35) {
-            // The phone drops to 60 Hz the moment a finger lifts; keep the fast rate for what moves next.
-            SideEffect { view.requestedFrameRate = android.view.View.REQUESTED_FRAME_RATE_CATEGORY_HIGH }
+        // The display's top rate, whatever it is: 120, 144 or more. A rate category is not enough here:
+        // this phone maps "high" to 90 Hz, so the vote names the number.
+        val topRate = LocalConfiguration.current.let { _ ->
+            view.display?.supportedModes?.filter { it.physicalWidth == view.display.mode.physicalWidth }?.maxOfOrNull { it.refreshRate } ?: 120f
         }
+        if (Build.VERSION.SDK_INT >= 35) {
+            SideEffect { view.requestedFrameRate = topRate }
+        }
+        LaunchedEffect(topRate) { vm.topFrameRate = topRate }
         val light = !p.isDark
         val sheetOpen by remember { derivedStateOf { vm.sheet > 0.5f } }
         SideEffect {
@@ -107,7 +113,7 @@ fun AppRoot() {
         }
         // Without this the phone falls back to 60 Hz the moment a finger lifts: whatever the
         // display's top rate is, 120 or 144, every animation gets it.
-        Box(Modifier.fillMaxSize().preferredFrameRate(FrameRateCategory.High).background(p.background)) {
+        Box(Modifier.fillMaxSize().preferredFrameRate(topRate).background(p.background)) {
             when {
                 !hasAudio -> Welcome(
                     title = stringResource(R.string.grant_title),
