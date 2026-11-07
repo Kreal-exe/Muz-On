@@ -402,8 +402,8 @@ private fun CoverLyricLine(vm: AppViewModel, position: Position, modifier: Modif
         androidx.compose.animation.AnimatedContent(
             targetState = index,
             transitionSpec = {
-                (androidx.compose.animation.slideInVertically(tween(260)) { it / 2 } + androidx.compose.animation.fadeIn(tween(260)))
-                    .togetherWith(androidx.compose.animation.slideOutVertically(tween(260)) { -it / 2 } + androidx.compose.animation.fadeOut(tween(200)))
+                (androidx.compose.animation.slideInVertically(tween(280)) { it / 3 } + androidx.compose.animation.fadeIn(tween(220, delayMillis = 80)))
+                    .togetherWith(androidx.compose.animation.slideOutVertically(tween(220)) { -it / 3 } + androidx.compose.animation.fadeOut(tween(120)))
                     .using(androidx.compose.animation.SizeTransform(clip = false))
             },
             label = "line",
@@ -581,9 +581,9 @@ private fun QueueCard(
 }
 
 /**
- * Keeps a scroll of the queue from running past the start of what plays next: a drag or a fling
- * coming from either side halts there, and only a new gesture goes on beyond it. That line is where
- * the list starts, so it is never passed by accident.
+ * Keeps a scroll of the queue from running past the current track: a drag or a fling coming from
+ * either side halts with it at the top, and only a new gesture goes on beyond it, so the line between
+ * what played and what plays next is never passed by accident.
  */
 private class StopAtNext(private val state: androidx.compose.foundation.lazy.LazyListState, private val stopIndex: () -> Int) {
     private var halted = false
@@ -630,7 +630,8 @@ private fun QueueRow(track: Track, offset: Int, dimmed: Boolean, onClick: () -> 
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Box(Modifier.width(30.dp), contentAlignment = Alignment.Center) {
-            if (offset > 0) Txt(offset.toString(), Type.tiny, p.muted)
+            // Distance from the current track, both ways: the 20th back reads 20, like the 20th ahead.
+            if (offset != 0) Txt(abs(offset).toString(), Type.tiny, p.muted)
         }
         Spacer(Modifier.width(6.dp))
         TrackArt(track, Modifier.size(42.dp), Radius6)
@@ -769,8 +770,10 @@ fun CompactPlayer(vm: AppViewModel, tabsHeight: Dp, modifier: Modifier = Modifie
                     },
                 ),
         ) {
+            // The page stays whole while it slides and only fades in the last stretch, where the mini
+            // player takes over: no moment of an empty coloured block.
             val pageAlpha = Modifier.graphicsLayer {
-                alpha = ((vm.sheet - 0.35f) / 0.25f).coerceIn(0f, 1f)
+                alpha = ((vm.sheet - 0.1f) / 0.2f).coerceIn(0f, 1f)
                 translationY = if (vm.sheet > 0.05f) 0f else -100000f
             }
             // Controls under the artwork; both stay composed, so nothing is built while the finger moves.
@@ -791,8 +794,8 @@ fun CompactPlayer(vm: AppViewModel, tabsHeight: Dp, modifier: Modifier = Modifie
                     .fillMaxWidth()
                     .height(with(density) { g.miniHeight.toDp() })
                     .graphicsLayer {
-                        val visible = vm.sheet < 0.15f
-                        alpha = (1f - vm.sheet / 0.15f).coerceIn(0f, 1f)
+                        val visible = vm.sheet < 0.12f
+                        alpha = (1f - vm.sheet / 0.12f).coerceIn(0f, 1f)
                         translationY = if (visible) 0f else -100000f // out of reach of touches
                     }
                     .clickable(interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }, indication = null) { settleTo(1f) }
@@ -824,10 +827,7 @@ fun CompactPlayer(vm: AppViewModel, tabsHeight: Dp, modifier: Modifier = Modifie
                         clip = true
                     }
                     .pointerInput(Unit) {
-                        detectTapGestures {
-                            if (vm.sheet < 0.5f) settleTo(1f)
-                            else if (hasLyricsNow()) vm.lyricsOpen = true
-                        }
+                        detectTapGestures { if (vm.sheet < 0.5f) settleTo(1f) }
                     }
                     .swipeForTrack(conn),
             ) {
@@ -849,7 +849,6 @@ fun CompactPlayer(vm: AppViewModel, tabsHeight: Dp, modifier: Modifier = Modifie
 
             QueueSheet(vm, g, controlsBottom, sheetScroll, pageAlpha)
 
-            if (vm.lyricsOpen && vm.sheet > 0.5f) FullLyrics(vm, position, Modifier.fillMaxSize())
         }
 
         if (vm.prefs.lyricPopup) {
@@ -866,10 +865,7 @@ fun CompactPlayer(vm: AppViewModel, tabsHeight: Dp, modifier: Modifier = Modifie
                         alpha = (1f - vm.sheet / 0.12f).coerceIn(0f, 1f)
                         translationY = if (vm.sheet < 0.12f) 0f else -100000f
                     },
-            ) {
-                vm.lyricsOpen = true
-                settleTo(1f)
-            }
+            ) { settleTo(1f) }
         }
     }
 }
@@ -892,7 +888,7 @@ private fun QueueSheet(vm: AppViewModel, g: Geometry, restY: androidx.compose.ru
         }
     }
     val listState = rememberLazyListState(initialFirstVisibleItemIndex = vm.connection.playOrderPosition + 1)
-    val stop = remember(listState) { StopAtNext(listState) { vm.connection.playOrderPosition + 1 } }
+    val stop = remember(listState) { StopAtNext(listState) { vm.connection.playOrderPosition } }
     val queueScroll = remember(sheetScroll, stop) {
         object : NestedScrollConnection {
             override fun onPreScroll(available: Offset, source: NestedScrollSource): Offset {
@@ -1019,7 +1015,6 @@ fun PlayerPane(vm: AppViewModel, modifier: Modifier = Modifier) {
                 Box(
                     Modifier
                         .size(maxWidth)
-                        .pointerInput(lyrics) { detectTapGestures { if (lyrics?.isEmpty == false) vm.lyricsOpen = true } }
                         .swipeForTrack(conn),
                 ) {
                     ArtPager(conn, Modifier.fillMaxSize(), { true }, 0.dp)
@@ -1032,6 +1027,5 @@ fun PlayerPane(vm: AppViewModel, modifier: Modifier = Modifier) {
             }
             QueueCard(conn, Modifier.fillMaxWidth().weight(1f).padding(horizontal = 10.dp))
         }
-        if (vm.lyricsOpen && track != null) FullLyrics(vm, position, Modifier.fillMaxSize())
     }
 }

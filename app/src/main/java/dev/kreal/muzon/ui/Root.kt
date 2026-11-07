@@ -37,7 +37,9 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Home
 import androidx.compose.material3.Icon
 import androidx.compose.runtime.Composable
-import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import kotlinx.coroutines.withTimeoutOrNull
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.zIndex
 import androidx.compose.runtime.mutableFloatStateOf
@@ -183,7 +185,8 @@ private fun Loaded(vm: AppViewModel) {
 private fun CompactShell(vm: AppViewModel, library: Library) {
     val holder = rememberSaveableStateHolder()
     val p = LocalPalette.current
-    val bottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
+    // Kept clear of the system's gesture strip at the bottom edge, where a sideways drag switches apps.
+    val bottom = maxOf(WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding(), 14.dp)
     val tabsHeight = 64.dp + bottom
     val hasTrack = vm.connection.current != null
     val space = tabsHeight + if (hasTrack) 66.dp else 6.dp
@@ -282,19 +285,32 @@ private fun TabBar(vm: AppViewModel, modifier: Modifier) {
             Modifier
                 .fillMaxSize()
                 .pointerInput(slot) {
-                    detectDragGesturesAfterLongPress(
-                        onDragStart = { at ->
-                            val i = (at.x / slot).toInt().coerceIn(0, currentTabs.lastIndex)
-                            lifted = currentTabs[i]
-                            liftX.floatValue = i * slot
-                            haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress)
-                        },
-                        onDragEnd = { lifted = null },
-                        onDragCancel = { lifted = null },
-                        onDrag = { change, amount ->
-                            val tab = lifted ?: return@detectDragGesturesAfterLongPress
+                    // Watches before the tabs do, so a held tab can be lifted even though tabs are tappable.
+                    awaitEachGesture {
+                        val down = awaitFirstDown(requireUnconsumed = false, pass = androidx.compose.ui.input.pointer.PointerEventPass.Initial)
+                        val held = withTimeoutOrNull(viewConfiguration.longPressTimeoutMillis) {
+                            while (true) {
+                                val event = awaitPointerEvent(androidx.compose.ui.input.pointer.PointerEventPass.Initial)
+                                val change = event.changes.firstOrNull { it.id == down.id } ?: return@withTimeoutOrNull false
+                                if (!change.pressed) return@withTimeoutOrNull false
+                                if ((change.position - down.position).getDistance() > viewConfiguration.touchSlop) return@withTimeoutOrNull false
+                            }
+                            @Suppress("UNREACHABLE_CODE") false
+                        }
+                        if (held != null) return@awaitEachGesture
+                        val i = (down.position.x / slot).toInt().coerceIn(0, currentTabs.lastIndex)
+                        val tab = currentTabs[i]
+                        lifted = tab
+                        liftX.floatValue = i * slot
+                        haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress)
+                        var last = down.position.x
+                        while (true) {
+                            val event = awaitPointerEvent(androidx.compose.ui.input.pointer.PointerEventPass.Initial)
+                            val change = event.changes.firstOrNull { it.id == down.id } ?: break
                             change.consume()
-                            liftX.floatValue = (liftX.floatValue + amount.x).coerceIn(0f, slot * (currentTabs.size - 1))
+                            if (!change.pressed) break
+                            liftX.floatValue = (liftX.floatValue + change.position.x - last).coerceIn(0f, slot * (currentTabs.size - 1))
+                            last = change.position.x
                             val target = ((liftX.floatValue + slot / 2) / slot).toInt().coerceIn(0, currentTabs.lastIndex)
                             val from = currentTabs.indexOf(tab)
                             if (target != from) {
@@ -302,8 +318,9 @@ private fun TabBar(vm: AppViewModel, modifier: Modifier) {
                                 list.add(target, list.removeAt(from))
                                 vm.prefs.updateTabOrder(list.map { it.name })
                             }
-                        },
-                    )
+                        }
+                        lifted = null
+                    }
                 },
         ) {
             tabs.forEachIndexed { index, tab ->
