@@ -261,7 +261,7 @@ private fun CompactShell(vm: AppViewModel, library: Library) {
 private fun BackHandling(vm: AppViewModel) {
     val scope = rememberCoroutineScope()
     val sheetOpen by remember { derivedStateOf { vm.sheet > 0f } }
-    val spec = spring<Float>(dampingRatio = 1f, stiffness = 340f)
+    val spec = spring<Float>(dampingRatio = 1f, stiffness = 520f, visibilityThreshold = 0.001f)
     PredictiveBackHandler(enabled = vm.nav.canPop && !sheetOpen) { progress ->
         vm.nav.beginBackGesture()
         try {
