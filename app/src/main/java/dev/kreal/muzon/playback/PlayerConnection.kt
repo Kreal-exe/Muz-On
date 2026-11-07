@@ -28,7 +28,8 @@ class PlayerConnection(private val context: Context, private val prefs: Prefs, p
     private var controller: MediaController? = null
     private var connecting = false
     private val main = Handler(Looper.getMainLooper())
-    private var pending: ((MediaController) -> Unit)? = null
+    /** Commands given before the player was reachable, run in order once it is. */
+    private val pending = mutableListOf<(Player) -> Unit>()
     private var library: Library? = null
 
     /** Tracks by window index, in the order they were queued. */
@@ -69,6 +70,10 @@ class PlayerConnection(private val context: Context, private val prefs: Prefs, p
             if (events.contains(Player.EVENT_SHUFFLE_MODE_ENABLED_CHANGED) || events.contains(Player.EVENT_REPEAT_MODE_CHANGED)) {
                 prefs.saveModes(player.shuffleModeEnabled, player.repeatMode)
             }
+            if (events.contains(Player.EVENT_TIMELINE_CHANGED) && player.mediaItemCount > 0) {
+                // The saved queue follows every insert and removal, so a restart brings back exactly this.
+                prefs.saveQueue((0 until player.mediaItemCount).map { player.getMediaItemAt(it).mediaId }, player.currentMediaItemIndex, player.currentPosition)
+            }
             if (events.contains(Player.EVENT_MEDIA_ITEM_TRANSITION) || events.contains(Player.EVENT_IS_PLAYING_CHANGED)) {
                 prefs.savePosition(player.currentMediaItemIndex, player.currentPosition)
             }
@@ -93,9 +98,11 @@ class PlayerConnection(private val context: Context, private val prefs: Prefs, p
                 val c = runCatching { future.get() }.getOrNull() ?: return@addListener
                 controller = c
                 c.addListener(listener)
-                adoptOrRestore(c)
-                pending?.invoke(c)
-                pending = null
+                // A command already waiting decides what plays; the saved queue would only be replaced.
+                if (pending.isEmpty()) adoptOrRestore(c)
+                val waiting = pending.toList()
+                pending.clear()
+                waiting.forEach { it(player() ?: c) }
             },
             MoreExecutors.directExecutor(),
         )
@@ -137,12 +144,16 @@ class PlayerConnection(private val context: Context, private val prefs: Prefs, p
         val (ids, index, position) = prefs.savedQueue() ?: return
         val tracks = ids.mapNotNull(lib.byId::get).filter { it.uri != null }
         if (tracks.isEmpty()) return
+        // The saved index counts the saved list; files gone since then must not shift it.
+        val start = tracks.indexOfFirst { it.id == ids.getOrNull(index) }.takeIf { it >= 0 } ?: 0
         queue = tracks
-        c.setMediaItems(tracks.map(::toItem), index.coerceIn(0, tracks.lastIndex), position)
-        c.shuffleModeEnabled = prefs.savedShuffle()
-        c.repeatMode = prefs.savedRepeat()
-        c.prepare()
-        sync(c)
+        val p: Player = player() ?: c
+        p.setMediaItems(tracks.map(::toItem), start, position)
+        p.shuffleModeEnabled = prefs.savedShuffle()
+        if (p.shuffleModeEnabled) shuffleFrom(start)
+        p.repeatMode = prefs.savedRepeat()
+        p.prepare()
+        sync(p)
     }
 
     private fun sync(p: Player) {
@@ -187,12 +198,32 @@ class PlayerConnection(private val context: Context, private val prefs: Prefs, p
         )
         .build()
 
-    private fun withController(block: (MediaController) -> Unit) {
-        val c = controller
-        if (c != null) block(c) else {
-            pending = block
+    /** The player in this process when the service runs, so a change is there at once. */
+    private fun player(): ExoPlayer? = localPlayer() as? ExoPlayer
+
+    /**
+     * Runs [block] on the player: the one in this process when it exists, else the controller; with
+     * neither yet, after connecting, in the order the commands were given.
+     */
+    private fun withController(block: (Player) -> Unit) {
+        val p: Player? = player() ?: controller
+        if (p != null) block(p) else {
+            pending += block
             connect()
         }
+    }
+
+    /**
+     * A shuffled order that starts at [first] and plays everything else after it. The player's own
+     * order is random as a whole, so the current track could land in the middle and half the queue
+     * would count as played.
+     */
+    private fun shuffleFrom(first: Int) {
+        val exo = player() ?: return
+        val n = exo.mediaItemCount
+        if (first !in 0 until n) return
+        val rest = (0 until n).filter { it != first }.shuffled()
+        exo.setShuffleOrder(androidx.media3.exoplayer.source.ShuffleOrder.DefaultShuffleOrder((listOf(first) + rest).toIntArray(), System.nanoTime()))
     }
 
     fun play(list: List<Track>, start: Int = 0, shuffled: Boolean = false) {
@@ -206,10 +237,11 @@ class PlayerConnection(private val context: Context, private val prefs: Prefs, p
             startTrack?.uri != null -> tracks.indexOf(startTrack).coerceAtLeast(0)
             else -> 0
         }
-        queue = tracks
         withController { c ->
+            queue = tracks
             c.setMediaItems(tracks.map(::toItem), index, 0L)
             c.shuffleModeEnabled = shuffled
+            if (shuffled) shuffleFrom(index)
             c.prepare()
             c.play()
             prefs.saveQueue(tracks.map { it.id }, index, 0)
@@ -221,7 +253,10 @@ class PlayerConnection(private val context: Context, private val prefs: Prefs, p
         if (c.playWhenReady && c.playbackState != Player.STATE_ENDED) {
             c.pause()
         } else {
-            if (c.playbackState == Player.STATE_ENDED) c.seekToDefaultPosition(0)
+            if (c.playbackState == Player.STATE_ENDED) {
+                // After the end: on to what was added since, else from the first track of the order.
+                if (c.hasNextMediaItem()) c.seekToNextMediaItem() else c.seekToDefaultPosition(c.currentTimeline.getFirstWindowIndex(c.shuffleModeEnabled))
+            }
             if (c.playbackState == Player.STATE_IDLE) c.prepare()
             c.play()
         }
@@ -262,9 +297,14 @@ class PlayerConnection(private val context: Context, private val prefs: Prefs, p
             return
         }
         withController { c ->
-            if (c.mediaItemCount == 0) play(items) else {
-                c.addMediaItems(if (next) c.currentMediaItemIndex + 1 else c.mediaItemCount, items.map(::toItem))
-                refresh()
+            when {
+                c.mediaItemCount == 0 -> play(items)
+                // Connected meanwhile: the in-process player keeps the shuffled order right.
+                player() != null -> insert(items, next)
+                else -> {
+                    c.addMediaItems(if (next) c.currentMediaItemIndex + 1 else c.mediaItemCount, items.map(::toItem))
+                    refresh()
+                }
             }
         }
     }
@@ -284,7 +324,11 @@ class PlayerConnection(private val context: Context, private val prefs: Prefs, p
     fun previous() = withController { it.seekToPrevious() }
     fun seekTo(ms: Long) = withController { it.seekTo(ms) }
     fun seekToWindow(index: Int) = withController { if (index != it.currentMediaItemIndex) it.seekTo(index, 0) }
-    fun toggleShuffle() = withController { it.shuffleModeEnabled = !it.shuffleModeEnabled }
+    fun toggleShuffle() = withController {
+        it.shuffleModeEnabled = !it.shuffleModeEnabled
+        // Shuffle on: everything but the current track is still to come.
+        if (it.shuffleModeEnabled) shuffleFrom(it.currentMediaItemIndex)
+    }
     fun cycleRepeat() = withController {
         it.repeatMode = when (it.repeatMode) {
             Player.REPEAT_MODE_OFF -> Player.REPEAT_MODE_ALL
@@ -299,7 +343,7 @@ class PlayerConnection(private val context: Context, private val prefs: Prefs, p
     var sleepEndsAt by mutableLongStateOf(0L)
         private set
     private val sleep = Runnable {
-        controller?.pause()
+        (localPlayer() ?: controller)?.pause()
         sleepEndsAt = 0L
     }
 

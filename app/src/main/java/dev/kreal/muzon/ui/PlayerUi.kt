@@ -805,7 +805,10 @@ private fun geometry(density: Density, width: Float, height: Float, tabs: Dp, to
     if (wide) {
         // The open player of a tablet: artwork with its controls on the left, the queue beside them.
         val left = width * 0.5f
-        val artSize = min(left - 48.dp.toPx(), height - top.toPx() - 230.dp.toPx())
+        // With lyrics the artwork gives up room: at least half the column is theirs.
+        val fullArt = min(left - 48.dp.toPx(), height - top.toPx() - 230.dp.toPx())
+        val lyricsArt = min(fullArt, (height - top.toPx()) * 0.5f - 56.dp.toPx() - WIDE_CONTROLS.toPx() - 20.dp.toPx()).coerceAtLeast(120.dp.toPx())
+        val artSize = lerp(lyricsArt, fullArt, centred)
         return@with Geometry(
             width, height, miniTop, miniHeight, margin,
             artX = (left - artSize) / 2,
