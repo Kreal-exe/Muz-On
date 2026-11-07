@@ -54,6 +54,34 @@ class Navigator {
     var tab by mutableStateOf(Tab.Home)
         private set
     val stack get() = stacks.getValue(tab)
+    fun stackOf(t: Tab): List<Route> = stacks.getValue(t)
+
+    /** Tabs seen before the current one, most recent last, for back. */
+    private val history = mutableListOf<Tab>()
+
+    private fun enter(t: Tab) {
+        if (t == tab) return
+        history.remove(t)
+        history.add(tab)
+        tab = t
+    }
+
+    /** A swipe between tabs landed on [t]: show it as it was left. */
+    fun showTab(t: Tab) {
+        if (t == tab) return
+        settle()
+        progress = 1f
+        enter(t)
+    }
+
+    /** Back on a tab's first page: to the tab seen before it, else Home. */
+    fun backToPreviousTab() {
+        settle()
+        progress = 1f
+        val previous = history.removeLastOrNull() ?: Tab.Home
+        history.remove(previous)
+        tab = previous
+    }
     val canPop get() = stack.size > 1
 
     private val progressState = mutableFloatStateOf(1f)
@@ -74,14 +102,14 @@ class Navigator {
         if (target == tab) {
             while (stack.size > 1) stack.removeAt(stack.lastIndex)
         } else {
-            tab = target
+            enter(target)
         }
     }
 
     fun openInTab(target: Tab, route: Route) {
         settle()
         progress = 1f
-        tab = target
+        enter(target)
         val list = stacks.getValue(target)
         while (list.size > 1) list.removeAt(list.lastIndex)
         list.add(route)
@@ -135,23 +163,26 @@ fun StackHost(
     nav: Navigator,
     holder: SaveableStateHolder,
     modifier: Modifier = Modifier,
+    tab: Tab = nav.tab,
     content: @Composable (Route) -> Unit,
 ) {
     val background = LocalPalette.current.background
     BoxWithConstraints(modifier.fillMaxSize()) {
         val width = constraints.maxWidth.toFloat()
-        val stack = nav.stack
+        val stack = nav.stackOf(tab)
         val shown = stack.takeLast(2)
+        // Only the tab on show moves; a neighbour seen during a swipe is at rest.
+        val progress = { if (tab == nav.tab) nav.progress else 1f }
         shown.forEachIndexed { index, route ->
             val isTop = index == shown.lastIndex
             val hasBelow = shown.size == 2
             key(route.key) {
-                holder.SaveableStateProvider(route.key) {
+                holder.SaveableStateProvider("$tab/${route.key}") {
                     Box(
                         Modifier
                             .fillMaxSize()
                             .graphicsLayer {
-                                val p = nav.progress
+                                val p = progress()
                                 when {
                                     !hasBelow -> {
                                         translationX = 0f

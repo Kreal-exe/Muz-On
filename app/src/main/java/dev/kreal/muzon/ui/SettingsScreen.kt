@@ -196,14 +196,18 @@ fun SettingsScreen(vm: AppViewModel, library: Library) {
         }
         item { Toggle(stringResource(R.string.s_cover_color), stringResource(R.string.s_cover_color_hint), prefs.coverColor) { prefs.coverColor = it } }
         item {
-            Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
-                Txt(stringResource(R.string.s_accent), Type.body, modifier = Modifier.weight(1f))
+            Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp)) {
+                Txt(stringResource(R.string.s_accent), Type.body)
+                Spacer(Modifier.height(10.dp))
+                // Wraps to a second row on a narrow screen.
+                androidx.compose.foundation.layout.FlowRow(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 Blocks.accents.forEachIndexed { i, c ->
                     Box(
-                        Modifier.padding(start = 6.dp).size(26.dp).clip(CircleShape).background(c)
+                        Modifier.size(34.dp).clip(CircleShape).background(c)
                             .clickable { prefs.accent = i },
                         contentAlignment = Alignment.Center,
-                    ) { if (prefs.accent == i) Icon(Icons.Rounded.Check, null, tint = Color.White, modifier = Modifier.size(16.dp)) }
+                    ) { if (prefs.accent == i) Icon(Icons.Rounded.Check, null, tint = Color.White, modifier = Modifier.size(18.dp)) }
+                }
                 }
             }
         }

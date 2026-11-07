@@ -37,7 +37,10 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowLeft
+import androidx.compose.material.icons.automirrored.rounded.Sort
 import androidx.compose.material.icons.rounded.Add
+import androidx.compose.material.icons.rounded.Delete
+import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.OpenInFull
@@ -225,6 +228,10 @@ private fun HomeScreen(vm: AppViewModel, library: Library) {
         }
         item(key = "actions", span = { GridItemSpan(maxLineSpan) }, contentType = "actions") {
             Row(Modifier.fillMaxWidth().height(34.dp), verticalAlignment = Alignment.CenterVertically) {
+                Tappable({ editing = !editing }, Modifier.clip(RoundedCornerShape(8.dp)).padding(4.dp)) {
+                    Txt(stringResource(if (editing) R.string.done else R.string.edit), Type.small, if (editing) p.accent else p.muted)
+                }
+                Spacer(Modifier.weight(1f))
                 Row(
                     Modifier.clip(RoundedCornerShape(8.dp)).clickable { vm.nav.push(Route.SettingsRoute) }.padding(4.dp),
                     verticalAlignment = Alignment.CenterVertically,
@@ -233,14 +240,10 @@ private fun HomeScreen(vm: AppViewModel, library: Library) {
                     Spacer(Modifier.width(5.dp))
                     Txt(stringResource(R.string.settings), Type.small, p.muted)
                 }
-                Spacer(Modifier.weight(1f))
-                Tappable({ editing = !editing }, Modifier.clip(RoundedCornerShape(8.dp)).padding(4.dp)) {
-                    Txt(stringResource(if (editing) R.string.done else R.string.edit), Type.small, if (editing) p.accent else p.muted)
-                }
             }
         }
         items(library.playlists, key = { "p:${it.id}" }, contentType = { "cover" }) { playlist ->
-            CoverCell(playlist.name, library.tracksOf(playlist).size.toString(), { Mosaic(library.tracksOf(playlist), Modifier.fillMaxSize()) }, vm, library.tracksOf(playlist)) {
+            CoverCell(playlist.name, library.tracksOf(playlist).size.toString(), { Mosaic(library.tracksOf(playlist), Modifier.fillMaxSize()) }, vm, library.tracksOf(playlist), playlist) {
                 vm.nav.push(Route.PlaylistRoute(playlist.id))
             }
         }
@@ -511,7 +514,7 @@ private fun PlaceThumbs(vm: AppViewModel, library: Library, place: Place, size: 
 
 @Composable
 @OptIn(ExperimentalFoundationApi::class)
-private fun CoverCell(title: String, subtitle: String, art: @Composable () -> Unit, vm: AppViewModel? = null, tracks: List<Track>? = null, onClick: () -> Unit) {
+private fun CoverCell(title: String, subtitle: String, art: @Composable () -> Unit, vm: AppViewModel? = null, tracks: List<Track>? = null, playlist: Playlist? = null, onClick: () -> Unit) {
     val p = LocalPalette.current
     var menu by remember { mutableStateOf(false) }
     Box {
@@ -521,7 +524,7 @@ private fun CoverCell(title: String, subtitle: String, art: @Composable () -> Un
             Txt(title, Type.small.copy(fontWeight = androidx.compose.ui.text.font.FontWeight(600)), p.text)
             Txt(subtitle, Type.tiny, p.muted)
         }
-        if (vm != null && tracks != null) CollectionMenu(vm, tracks, menu) { menu = it }
+        if (vm != null && tracks != null) CollectionMenu(vm, tracks, menu, playlist) { menu = it }
     }
 }
 
@@ -674,7 +677,19 @@ private fun PlaylistsScreen(vm: AppViewModel, library: Library) {
         contentPadding = PaddingValues(start = 10.dp, end = 10.dp, top = statusTop() + 4.dp, bottom = LocalBottomSpace.current + 10.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        item { RootTitle(stringResource(R.string.place_playlists)) }
+        item {
+            var naming by remember { mutableStateOf(false) }
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                RootTitle(stringResource(R.string.place_playlists), Modifier.weight(1f))
+                IconTap(Icons.Rounded.Add, p.text, 26.dp, 44.dp, label = stringResource(R.string.playlist_new)) { naming = true }
+            }
+            if (naming) {
+                PlaylistNameDialog(stringResource(R.string.playlist_new), "", stringResource(R.string.create), { naming = false }) { name ->
+                    naming = false
+                    vm.createPlaylist(name, emptyList(), open = true)
+                }
+            }
+        }
         itemsIndexed(library.playlists, key = { _, it -> it.id }) { i, playlist ->
             val color = Blocks.forIndex(i)
             val on = Blocks.on(color)
@@ -684,7 +699,10 @@ private fun PlaylistsScreen(vm: AppViewModel, library: Library) {
                     .fillMaxWidth()
                     .height(84.dp)
                     .block(color, theme, 16.dp)
-                    .combinedClickable(onClick = { vm.nav.push(Route.PlaylistRoute(playlist.id)) }, onLongClick = { vm.collectionMenu = tracks })
+                    .combinedClickable(onClick = { vm.nav.push(Route.PlaylistRoute(playlist.id)) }, onLongClick = {
+                        vm.collectionPlaylist = playlist
+                        vm.collectionMenu = tracks
+                    })
                     .padding(10.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
@@ -789,10 +807,19 @@ private fun PageBar(vm: AppViewModel, tint: Color, title: String? = null, traili
 }
 
 @Composable
-private fun SongsScreen(vm: AppViewModel, title: String, tracks: List<Track>, isRoot: Boolean) {
+private fun SongsScreen(vm: AppViewModel, title: String, base: List<Track>, isRoot: Boolean) {
     val state = rememberLazyListState()
     val conn = vm.connection
-    val letters = remember(tracks, isRoot) { if (isRoot) lettersOf(tracks.map { it.title }) else emptyList() }
+    val p = LocalPalette.current
+    // Every list of songs sorts the way the classic player does; each remembers its own order.
+    val sortKey = "songs:" + if (isRoot) "all" else title
+    val saved = remember(sortKey) { vm.prefs.sortOf(sortKey) }
+    var mode by remember(sortKey) { mutableStateOf(saved.first) }
+    var reversed by remember(sortKey) { mutableStateOf(saved.second) }
+    val tracks = remember(base, mode, reversed) { Sorting.apply(mode, reversed, base) }
+    // Letters only make sense while the list goes by title.
+    val byTitle = mode == PlaylistSort.Title || (isRoot && mode == PlaylistSort.AsInMusic)
+    val letters = remember(tracks, isRoot, byTitle, reversed) { if (isRoot && byTitle && !reversed) lettersOf(tracks.map { it.title }) else emptyList() }
     Box(Modifier.fillMaxSize()) {
         LazyColumn(
             state = state,
@@ -800,14 +827,79 @@ private fun SongsScreen(vm: AppViewModel, title: String, tracks: List<Track>, is
             contentPadding = PaddingValues(end = if (letters.isEmpty()) 0.dp else 18.dp, top = statusTop() + 4.dp, bottom = LocalBottomSpace.current + 10.dp),
         ) {
             item {
-                if (isRoot) RootTitle(title) else PageBar(vm, LocalPalette.current.text, title)
+                if (isRoot) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        RootTitle(title, Modifier.weight(1f))
+                        CollectionMenuButton(vm, tracks, p.text)
+                    }
+                } else {
+                    PageBar(vm, p.text, title) { CollectionMenuButton(vm, tracks, p.text) }
+                }
             }
-            item { PlayButtons(LocalPalette.current.accent, Modifier.padding(horizontal = 14.dp, vertical = 4.dp), { conn.play(tracks) }, { conn.play(tracks, shuffled = true) }) }
+            item {
+                Txt(
+                    pluralStringResource(R.plurals.songs, tracks.size, tracks.size) + " · " + stringResource(R.string.hours_short, formatHours(tracks)),
+                    Type.small,
+                    p.muted,
+                    modifier = Modifier.padding(start = 14.dp, end = 14.dp, bottom = 6.dp),
+                )
+            }
+            item {
+                Row(Modifier.padding(horizontal = 14.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                    PlayButtons(p.accent, Modifier.weight(1f), { conn.play(tracks) }, { conn.play(tracks, shuffled = true) })
+                    val options = if (isRoot) PlaylistSort.entries - PlaylistSort.AsInMusic else PlaylistSort.entries
+                    SortChip(if (isRoot && mode == PlaylistSort.AsInMusic) PlaylistSort.Title else mode, reversed, options, p.text, p.surfaceHigh) { m, r ->
+                        mode = m
+                        reversed = r
+                        vm.prefs.setSort(sortKey, m, r)
+                    }
+                }
+            }
             itemsIndexed(tracks, key = { _, it -> it.id }, contentType = { _, _ -> "track" }) { i, track ->
                 TrackRow(track, conn.current?.id == track.id, conn.wantsToPlay, menu = { o, set -> TrackMenu(vm, track, LocalPalette.current.muted, open = o, setOpen = set) }) { conn.play(tracks, i) }
             }
         }
         LetterRail(letters, state, 2, Modifier.align(Alignment.CenterEnd).padding(top = statusTop(), bottom = LocalBottomSpace.current))
+    }
+}
+
+/** The current order of a list, opening the choice of orders and a reverse switch. */
+@Composable
+private fun SortChip(mode: PlaylistSort, reversed: Boolean, options: List<PlaylistSort>, on: Color, background: Color, modifier: Modifier = Modifier, own: Boolean = false, onChange: (PlaylistSort, Boolean) -> Unit) {
+    var menu by remember { mutableStateOf(false) }
+    // A playlist made here has no Music order: its own order is the one songs were added in.
+    @Composable
+    fun label(m: PlaylistSort) = if (own && m == PlaylistSort.AsInMusic) stringResource(R.string.sort_own) else sortLabel(m)
+    Box(modifier) {
+        Row(
+            Modifier.clip(RoundedCornerShape(16.dp)).background(background).clickable { menu = true }.padding(horizontal = 11.dp, vertical = 7.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Icon(Icons.AutoMirrored.Rounded.Sort, null, tint = on, modifier = Modifier.size(16.dp))
+            Spacer(Modifier.width(5.dp))
+            Txt(label(mode), Type.small, on)
+            Icon(Icons.Rounded.KeyboardArrowDown, null, tint = on, modifier = Modifier.size(16.dp))
+        }
+        DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
+            options.forEach { option ->
+                DropdownMenuItem(
+                    text = { Text(label(option), style = Type.body) },
+                    leadingIcon = { if (option == mode) Icon(Icons.Rounded.Check, null) else Spacer(Modifier.size(24.dp)) },
+                    onClick = {
+                        onChange(option, reversed)
+                        menu = false
+                    },
+                )
+            }
+            DropdownMenuItem(
+                text = { Text(stringResource(R.string.sort_reverse), style = Type.body) },
+                leadingIcon = { if (reversed) Icon(Icons.Rounded.Check, null) else Spacer(Modifier.size(24.dp)) },
+                onClick = {
+                    onChange(mode, !reversed)
+                    menu = false
+                },
+            )
+        }
     }
 }
 
@@ -850,6 +942,7 @@ private fun sortLabel(mode: PlaylistSort) = stringResource(
         PlaylistSort.Genre -> R.string.sort_genre
         PlaylistSort.DateAdded -> R.string.sort_date
         PlaylistSort.Duration -> R.string.sort_duration
+        PlaylistSort.Year -> R.string.sort_year
     },
 )
 
@@ -864,44 +957,17 @@ private fun PlaylistScreen(vm: AppViewModel, library: Library, playlist: Playlis
     var mode by remember(playlist.id) { mutableStateOf(saved.first) }
     var reversed by remember(playlist.id) { mutableStateOf(saved.second) }
     val tracks = remember(base, mode, reversed) { Sorting.apply(mode, reversed, base) }
-    var menu by remember { mutableStateOf(false) }
     val state = rememberLazyListState()
     LazyColumn(state = state, modifier = Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = LocalBottomSpace.current + 10.dp)) {
         item(key = "head") {
             Column(Modifier.fillMaxWidth().block(color, LocalAppTheme.current, 0.dp).padding(top = statusTop(), bottom = 12.dp)) {
                 PageBar(vm, on) {
-                    CollectionMenuButton(vm, tracks, on)
-                    Box {
-                        Row(
-                            Modifier.padding(end = 10.dp).clip(RoundedCornerShape(16.dp)).background(Color.Black.copy(alpha = 0.18f))
-                                .clickable { menu = true }.padding(horizontal = 11.dp, vertical = 6.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            Txt(sortLabel(mode), Type.small, on)
-                            Icon(Icons.Rounded.KeyboardArrowDown, null, tint = on, modifier = Modifier.size(16.dp))
-                        }
-                        DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
-                            PlaylistSort.entries.forEach { option ->
-                                DropdownMenuItem(
-                                    text = { Text(sortLabel(option), style = Type.body) },
-                                    leadingIcon = { if (option == mode) Icon(Icons.Rounded.Check, null) else Spacer(Modifier.size(24.dp)) },
-                                    onClick = {
-                                        mode = option
-                                        vm.prefs.setSort(playlist.id, mode, reversed)
-                                        menu = false
-                                    },
-                                )
-                            }
-                            DropdownMenuItem(
-                                text = { Text(stringResource(R.string.sort_reverse), style = Type.body) },
-                                leadingIcon = { if (reversed) Icon(Icons.Rounded.Check, null) else Spacer(Modifier.size(24.dp)) },
-                                onClick = {
-                                    reversed = !reversed
-                                    vm.prefs.setSort(playlist.id, mode, reversed)
-                                    menu = false
-                                },
-                            )
-                        }
+                    if (playlist.own) OwnPlaylistMenu(vm, playlist, on)
+                    CollectionMenuButton(vm, tracks, on, playlist)
+                    SortChip(mode, reversed, PlaylistSort.entries, on, Color.Black.copy(alpha = 0.18f), Modifier.padding(end = 10.dp), own = playlist.own) { m, r ->
+                        mode = m
+                        reversed = r
+                        vm.prefs.setSort(playlist.id, m, r)
                     }
                 }
                 Row(Modifier.padding(horizontal = 14.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -921,7 +987,45 @@ private fun PlaylistScreen(vm: AppViewModel, library: Library, playlist: Playlis
             }
         }
         itemsIndexed(tracks, key = { _, it -> it.id }, contentType = { _, _ -> "track" }) { i, track ->
-            TrackRow(track, conn.current?.id == track.id, conn.wantsToPlay, menu = { o, set -> TrackMenu(vm, track, LocalPalette.current.muted, open = o, setOpen = set) }) { conn.play(tracks, i) }
+            TrackRow(track, conn.current?.id == track.id, conn.wantsToPlay, menu = { o, set ->
+                TrackMenu(vm, track, LocalPalette.current.muted, open = o, setOpen = set, ownPlaylist = playlist.id.takeIf { playlist.own })
+            }) { conn.play(tracks, i) }
+        }
+        if (playlist.own && base.isEmpty()) {
+            item { Txt(stringResource(R.string.playlist_empty), Type.body, LocalPalette.current.muted, Modifier.padding(20.dp), maxLines = 4) }
+        }
+    }
+}
+
+/** Rename and delete, for a playlist made in the app. */
+@Composable
+private fun OwnPlaylistMenu(vm: AppViewModel, playlist: Playlist, tint: Color) {
+    var open by remember { mutableStateOf(false) }
+    var renaming by remember { mutableStateOf(false) }
+    var deleting by remember { mutableStateOf(false) }
+    Box {
+        IconTap(Icons.Rounded.Edit, tint, 22.dp, 44.dp, label = stringResource(R.string.playlist_rename)) { open = true }
+        DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
+            DropdownMenuItem(text = { Text(stringResource(R.string.playlist_rename), style = Type.body) }, leadingIcon = { Icon(Icons.Rounded.Edit, null) }, onClick = {
+                open = false
+                renaming = true
+            })
+            DropdownMenuItem(text = { Text(stringResource(R.string.playlist_delete), style = Type.body) }, leadingIcon = { Icon(Icons.Rounded.Delete, null) }, onClick = {
+                open = false
+                deleting = true
+            })
+        }
+    }
+    if (renaming) {
+        PlaylistNameDialog(stringResource(R.string.playlist_rename), playlist.name, stringResource(R.string.done), { renaming = false }) { name ->
+            renaming = false
+            vm.renamePlaylist(playlist.id, name)
+        }
+    }
+    if (deleting) {
+        ConfirmDialog(stringResource(R.string.playlist_delete), stringResource(R.string.playlist_delete_confirm, playlist.name), stringResource(R.string.delete), { deleting = false }) {
+            deleting = false
+            vm.deletePlaylist(playlist.id)
         }
     }
 }

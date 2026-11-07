@@ -38,6 +38,8 @@ data class Playlist(
     val hasExactOrder: Boolean = false,
     /** The rules of a smart playlist, to follow changes made on this phone. */
     val rules: ByteArray? = null,
+    /** Made in this app, so it can be changed here; the Music playlists are read only. */
+    val own: Boolean = false,
 ) {
     override fun equals(other: Any?) = other is Playlist && other.id == id && other.trackIds == trackIds && other.name == name
     override fun hashCode() = id.hashCode() * 31 + trackIds.hashCode()
@@ -162,9 +164,10 @@ object Sorting {
             )
             PlaylistSort.DateAdded -> tracks.sortedByDescending { it.dateAddedMs }
             PlaylistSort.Duration -> tracks.sortedBy { it.durationMs }
+            PlaylistSort.Year -> tracks.sortedWith(compareByDescending<Track> { it.year }.thenComparing(byArtist).thenComparing(byAlbum).thenComparing(albumOrder))
         }
         return if (reversed) sorted.asReversed() else sorted
     }
 }
 
-enum class PlaylistSort { AsInMusic, Artist, Album, Title, Genre, DateAdded, Duration }
+enum class PlaylistSort { AsInMusic, Artist, Album, Title, Genre, DateAdded, Duration, Year }

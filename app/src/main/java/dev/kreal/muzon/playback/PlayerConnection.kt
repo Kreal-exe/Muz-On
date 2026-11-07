@@ -15,6 +15,7 @@ import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
 import androidx.media3.common.Player
 import androidx.media3.common.Timeline
+import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.session.MediaController
 import androidx.media3.session.SessionToken
 import com.google.common.util.concurrent.MoreExecutors
@@ -227,35 +228,42 @@ class PlayerConnection(private val context: Context, private val prefs: Prefs, p
     }
 
     /** Puts [track] right after the current one. */
-    fun playNext(track: Track) {
-        if (track.uri == null) return
-        withController { c ->
-            if (c.mediaItemCount == 0) {
-                play(listOf(track))
-            } else {
-                c.addMediaItem(c.currentMediaItemIndex + 1, toItem(track))
-                refresh()
-            }
-        }
-    }
+    fun playNext(track: Track) = playNext(listOf(track))
 
-    fun playNext(tracks: List<Track>) {
+    /**
+     * Right after the current track, in the order things play. With shuffle on the player would put
+     * new items at random places of its shuffled order; here they go next there too.
+     */
+    fun playNext(tracks: List<Track>) = insert(tracks, next = true)
+
+    fun addToQueue(track: Track) = addToQueue(listOf(track))
+
+    /** At the end of what plays, shuffled or not. */
+    fun addToQueue(tracks: List<Track>) = insert(tracks, next = false)
+
+    private fun insert(tracks: List<Track>, next: Boolean) {
         val items = tracks.filter { it.uri != null }
         if (items.isEmpty()) return
-        withController { c ->
-            if (c.mediaItemCount == 0) play(items) else {
-                c.addMediaItems(c.currentMediaItemIndex + 1, items.map(::toItem))
-                refresh()
+        val exo = localPlayer() as? ExoPlayer
+        if (exo != null && exo.mediaItemCount > 0) {
+            val before = orderOf(exo.currentTimeline, exo.shuffleModeEnabled)
+            val current = exo.currentMediaItemIndex
+            val at = if (next) current + 1 else exo.mediaItemCount
+            exo.addMediaItems(at, items.map(::toItem))
+            if (exo.shuffleModeEnabled) {
+                val n = items.size
+                val shifted = before.map { if (it >= at) it + n else it }
+                val added = (at until at + n).toList()
+                val cut = shifted.indexOf(current) + 1
+                val order = if (next) shifted.take(cut) + added + shifted.drop(cut) else shifted + added
+                exo.setShuffleOrder(androidx.media3.exoplayer.source.ShuffleOrder.DefaultShuffleOrder(order.toIntArray(), System.nanoTime()))
             }
+            refresh()
+            return
         }
-    }
-
-    fun addToQueue(tracks: List<Track>) {
-        val items = tracks.filter { it.uri != null }
-        if (items.isEmpty()) return
         withController { c ->
             if (c.mediaItemCount == 0) play(items) else {
-                c.addMediaItems(items.map(::toItem))
+                c.addMediaItems(if (next) c.currentMediaItemIndex + 1 else c.mediaItemCount, items.map(::toItem))
                 refresh()
             }
         }
@@ -263,15 +271,6 @@ class PlayerConnection(private val context: Context, private val prefs: Prefs, p
 
     fun seekBy(ms: Long) = withController { it.seekTo((it.currentPosition + ms).coerceAtLeast(0)) }
 
-    fun addToQueue(track: Track) {
-        if (track.uri == null) return
-        withController { c ->
-            if (c.mediaItemCount == 0) play(listOf(track)) else {
-                c.addMediaItem(toItem(track))
-                refresh()
-            }
-        }
-    }
 
     fun removeWindow(window: Int) = withController { c ->
         if (window in 0 until c.mediaItemCount && window != c.currentMediaItemIndex) {

@@ -375,12 +375,13 @@ private fun lyricSize(size: LyricsSize, big: Boolean) = when (size) {
     LyricsSize.Large -> if (big) 26.sp else 23.sp
 }
 
-private fun lyricStyle(size: androidx.compose.ui.unit.TextUnit) = Type.bodyBold.copy(
+/** Lyrics text. Only over artwork does it get a shadow, and a light one: the shade does the rest. */
+private fun lyricStyle(size: androidx.compose.ui.unit.TextUnit, overArt: Boolean = false) = Type.bodyBold.copy(
     fontWeight = androidx.compose.ui.text.font.FontWeight(700),
     fontSize = size,
     lineHeight = size * 1.22f,
     textAlign = androidx.compose.ui.text.style.TextAlign.Center,
-    shadow = androidx.compose.ui.graphics.Shadow(Color.Black, Offset(0f, 1f), 8f),
+    shadow = if (overArt) androidx.compose.ui.graphics.Shadow(Color.Black.copy(alpha = 0.3f), Offset(0f, 1f), 4f) else null,
 )
 
 /**
@@ -393,9 +394,9 @@ private fun CoverLyricLine(vm: AppViewModel, position: Position, modifier: Modif
     val lyrics by produceState<Lyrics?>(null, track?.id) { value = track?.let { LyricsReader.read(it) } }
     val timed = lyrics?.timed.orEmpty()
     if (timed.isEmpty() || !vm.prefs.coverLyrics) return
-    val lead = vm.prefs.lyricsLeadMs
+    val lead = vm.lyricLeadMs
     val index by remember(timed, lead) { derivedStateOf { activeLine(timed, position.value.longValue + lead) } }
-    val style = lyricStyle(lyricSize(vm.prefs.lyricsSize, big = true))
+    val style = lyricStyle(lyricSize(vm.prefs.lyricsSize, big = true), overArt = true)
     Box(
         modifier
             .fillMaxWidth()
@@ -443,7 +444,7 @@ private fun FullLyrics(vm: AppViewModel, position: Position, modifier: Modifier)
         when {
             current == null -> Unit
             current.isEmpty -> Unit
-            else -> LyricsList(current, position, conn, Color.White, style, vm.prefs.lyricsLeadMs)
+            else -> LyricsList(current, position, conn, Color.White, style, vm.lyricLeadMs)
         }
     }
 }
@@ -452,29 +453,22 @@ private fun FullLyrics(vm: AppViewModel, position: Position, modifier: Modifier)
 private fun LyricsList(lyrics: Lyrics, position: Position, conn: PlayerConnection, on: Color, style: androidx.compose.ui.text.TextStyle, leadMs: Int) {
     val state = rememberLazyListState()
     val timed = lyrics.timed
-    val active by remember(timed, leadMs) { derivedStateOf { activeLine(timed, position.value.longValue + leadMs) } }
-    var lastTouch by remember { mutableLongStateOf(0L) }
+    // The fade starts a little early, so the line is lit by the time it is sung.
+    val active by remember(timed, leadMs) { derivedStateOf { activeLine(timed, position.value.longValue + leadMs + HIGHLIGHT_LEAD_MS) } }
+    var placed by remember(lyrics) { mutableStateOf(false) }
     LaunchedEffect(active) {
-        if (active >= 0 && System.currentTimeMillis() - lastTouch > 3000) state.animateScrollToItem((active - 3).coerceAtLeast(0))
+        state.followLine(active, first = !placed)
+        if (active >= 0) placed = true
     }
     LazyColumn(
         state = state,
-        modifier = Modifier.fillMaxSize().pointerInput(Unit) {
-            // Any touch pauses following the song for a moment, so the list does not fight the finger.
-            awaitPointerEventScope {
-                while (true) {
-                    awaitPointerEvent(androidx.compose.ui.input.pointer.PointerEventPass.Initial)
-                    lastTouch = System.currentTimeMillis()
-                }
-            }
-        },
+        modifier = Modifier.fillMaxSize(),
         contentPadding = PaddingValues(vertical = 40.dp),
     ) {
         itemsIndexed(timed, key = { i, _ -> i }, contentType = { _, _ -> 0 }) { i, line ->
             LyricRow(line, i == active, on, style) {
                 conn.seekTo(line.timeMs)
                 position.value.longValue = line.timeMs
-                lastTouch = 0L
             }
         }
         if (lyrics.plain.isNotEmpty()) {
@@ -488,7 +482,12 @@ private fun LyricsList(lyrics: Lyrics, position: Position, conn: PlayerConnectio
 
 @Composable
 private fun LyricRow(line: LyricLine, active: Boolean, on: Color, style: androidx.compose.ui.text.TextStyle, onTap: () -> Unit) {
-    val shown by animateFloatAsState(if (active) 1f else 0f, tween(140), label = "line")
+    // As in Apple Music: the sung line brightens and grows over half a second, the last one fades back.
+    val shown by animateFloatAsState(
+        if (active) 1f else 0f,
+        tween(if (active) 300 else 600, easing = androidx.compose.animation.core.CubicBezierEasing(0.2f, 0.8f, 0.2f, 1f)),
+        label = "line",
+    )
     androidx.compose.material3.Text(
         line.text,
         style = style,
@@ -655,6 +654,12 @@ private fun QueueRow(track: Track, offset: Int, dimmed: Boolean, menu: @Composab
 
 // ---- Compact: mini player that grows into the full one under the finger
 
+/** How much earlier than the line a lyric highlight starts, to cover its own fade. */
+const val HIGHLIGHT_LEAD_MS = 150
+
+/** What wireless headphones add before a sound is heard, on top of what the phone reports. */
+const val WIRELESS_DELAY_MS = 250
+
 private val MINI_BUTTONS = 118.dp
 
 /** Seek bar and buttons under the artwork of the two-column player. */
@@ -707,6 +712,38 @@ private fun MorphingControls(
             ) { conn.cycleRepeat() }
         }
     }
+}
+
+/**
+ * Moves the full player's seek bar onto the seek bar slot of the wide mini player as the sheet
+ * closes: the slot right of the title, as wide as the mini row gives it (see the mini row's weights).
+ */
+private fun Modifier.morphSeek(vm: AppViewModel, g: Geometry, density: Density, sheet: () -> androidx.compose.ui.layout.LayoutCoordinates?): Modifier = composed {
+    val box = remember { mutableStateOf(androidx.compose.ui.geometry.Rect.Zero) }
+    this
+        .onPlaced { c ->
+            val s = sheet() ?: return@onPlaced
+            if (s.isAttached && c.isAttached) {
+                val at = s.localPositionOf(c, Offset.Zero)
+                box.value = androidx.compose.ui.geometry.Rect(at, Size(c.size.width.toFloat(), c.size.height.toFloat()))
+            }
+        }
+        .graphicsLayer {
+            val b = box.value
+            if (b.width <= 0f) return@graphicsLayer
+            with(density) {
+                val start = g.miniArtX + g.miniArtSize + 10.dp.toPx()
+                val room = g.width - (MINI_BUTTONS + 12.dp).toPx() - start
+                val slotStart = start + room / 2.2f + 20.dp.toPx()
+                val slotWidth = room * 1.2f / 2.2f - 20.dp.toPx()
+                val k = 1f - vm.sheet
+                val s = 1f + (slotWidth / b.width - 1f) * k
+                translationX = k * (slotStart + slotWidth / 2 - b.center.x)
+                translationY = k * (g.miniHeight / 2 - b.center.y)
+                scaleX = s
+                scaleY = s
+            }
+        }
 }
 
 /** A tap skips; holding jumps within the track, repeating while held. */
@@ -914,7 +951,9 @@ fun CompactPlayer(vm: AppViewModel, tabsHeight: Dp, modifier: Modifier = Modifie
                     .padding(top = with(density) { (g.artY + g.artSize).toDp() } + if (g.wide) 14.dp else 6.dp, start = if (g.wide) 32.dp else 14.dp, end = if (g.wide) 32.dp else 14.dp)
                     .onPlaced { controlsBottom.floatValue = g.artY + g.artSize + with(density) { 22.dp.toPx() } + it.size.height },
             ) {
-                SeekBar(position, conn, onCover, pageAlpha)
+                // On a wide screen the seek bar flies into the mini player with the buttons and stays
+                // there as its seek bar; on a narrow one the mini player has none, so it fades.
+                SeekBar(position, conn, onCover, if (g.wide) Modifier.morphSeek(vm, g, density) { sheetCoords } else pageAlpha)
                 MorphingControls(vm, conn, onCover, cover.target, g, { sheetCoords }, pageAlpha)
                 val shown = lyrics
                 if (g.wide && shown != null && !shown.isEmpty) {
@@ -923,17 +962,18 @@ fun CompactPlayer(vm: AppViewModel, tabsHeight: Dp, modifier: Modifier = Modifie
                         pageAlpha
                             .weight(1f)
                             .fillMaxWidth()
-                            .graphicsLayer {
-                                alpha = 1f - centred
-                                compositingStrategy = androidx.compose.ui.graphics.CompositingStrategy.Offscreen
-                            }
+                            .graphicsLayer { alpha = 1f - centred }
                             .drawWithContent {
                                 drawContent()
-                                // Lines fade out at both edges instead of being cut.
-                                drawRect(Brush.verticalGradient(0f to Color.Black, 0.1f to Color.Transparent, 0.9f to Color.Transparent, 1f to Color.Black), blendMode = androidx.compose.ui.graphics.BlendMode.DstOut)
+                                // Lines fade into the background at both edges. Painting the background colour
+                                // over them costs nothing; cutting them out needed a layer of the whole column
+                                // on every frame, which made the glide stutter.
+                                val bg = cover.fill.value
+                                drawRect(Brush.verticalGradient(0f to bg, 1f to bg.copy(alpha = 0f), endY = size.height * 0.12f))
+                                drawRect(Brush.verticalGradient(0f to bg.copy(alpha = 0f), 1f to bg, startY = size.height * 0.88f, endY = size.height))
                             },
                     ) {
-                        LyricsList(shown, position, conn, onCover, lyricStyle(lyricSize(vm.prefs.lyricsSize, big = false)), vm.prefs.lyricsLeadMs)
+                        LyricsList(shown, position, conn, onCover, lyricStyle(lyricSize(vm.prefs.lyricsSize, big = false)), vm.lyricLeadMs)
                     }
                 }
             }
@@ -950,16 +990,22 @@ fun CompactPlayer(vm: AppViewModel, tabsHeight: Dp, modifier: Modifier = Modifie
                     }
                     // Room for the three buttons, which arrive here from the full player.
                     .padding(end = MINI_BUTTONS + 12.dp)
-                    .clickable(interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }, indication = null) { settleTo(1f) }
                     .padding(start = with(density) { (g.miniArtX + g.miniArtSize).toDp() } + 10.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Column(Modifier.weight(1f)) {
+                Column(
+                    Modifier
+                        .weight(1f)
+                        .fillMaxHeight()
+                        .clickable(interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }, indication = null) { settleTo(1f) },
+                    verticalArrangement = Arrangement.Center,
+                ) {
                     Txt(track.title.trim(), Type.bodyBold, onCover)
                     Txt(track.artist, Type.small, onCover.copy(alpha = 0.8f))
                 }
                 // A wide screen has room for the seek bar in the mini player too.
-                if (g.wide) SeekBar(position, conn, onCover, Modifier.weight(1.2f).padding(start = 20.dp))
+                // Room for the seek bar arriving from the full player.
+                if (g.wide) Spacer(Modifier.weight(1.2f))
             }
 
             // One artwork travels from the mini player to the top of the full page.
@@ -1008,13 +1054,32 @@ fun CompactPlayer(vm: AppViewModel, tabsHeight: Dp, modifier: Modifier = Modifie
             }
 
             if (g.wide) {
+                // Same stop at the current track as the card of the folded screen, from either side.
+                val wideState = rememberLazyListState(initialFirstVisibleItemIndex = conn.playOrderPosition + 1)
+                val wideStop = remember(wideState) { StopAtNext(wideState) { conn.playOrderPosition } }
+                val wideScroll = remember(wideStop) {
+                    object : NestedScrollConnection {
+                        override fun onPreScroll(available: Offset, source: NestedScrollSource) = Offset(0f, wideStop.excess(available.y))
+
+                        override suspend fun onPreFling(available: Velocity): Velocity =
+                            if (wideStop.excess(Math.signum(available.y)) != 0f) available else Velocity.Zero
+
+                        override suspend fun onPostFling(consumed: Velocity, available: Velocity): Velocity {
+                            wideStop.gestureEnded()
+                            return Velocity.Zero
+                        }
+                    }
+                }
+                val reopened by remember { derivedStateOf { vm.sheet < 0.01f } }
                 QueueCard(
                     vm,
                     conn,
                     pageAlpha
                         .fillMaxSize()
-                        .padding(start = with(density) { g.leftWidth.toDp() }, top = systemTop + 12.dp, end = 16.dp),
-
+                        .padding(start = with(density) { g.leftWidth.toDp() }, top = systemTop + 12.dp, end = 16.dp)
+                        .nestedScroll(wideScroll),
+                    resetKey = reopened,
+                    state = wideState,
                 )
             } else {
                 QueueSheet(vm, g, controlsBottom, sheetScroll, pageAlpha)
@@ -1025,7 +1090,7 @@ fun CompactPlayer(vm: AppViewModel, tabsHeight: Dp, modifier: Modifier = Modifie
 
         if (vm.prefs.lyricPopup) {
             LyricPopup(
-                vm.prefs.lyricsLeadMs,
+                vm.lyricLeadMs,
                 lyrics,
                 position,
                 cover.fill,
@@ -1162,7 +1227,22 @@ private fun LyricPopup(
                 .clickable(onClick = onClick)
                 .padding(horizontal = 12.dp, vertical = 6.dp),
         ) {
-            androidx.compose.animation.Crossfade(shown, animationSpec = tween(180), label = "line") { text ->
+            // The bubble grows or shrinks smoothly to the new line while the old one slides up and out;
+            // before, its size jumped from one line to the next.
+            androidx.compose.animation.AnimatedContent(
+                shown,
+                transitionSpec = {
+                    (androidx.compose.animation.slideInVertically(tween(260, easing = androidx.compose.animation.core.FastOutSlowInEasing)) { it / 2 } +
+                        androidx.compose.animation.fadeIn(tween(200, delayMillis = 60)))
+                        .togetherWith(
+                            androidx.compose.animation.slideOutVertically(tween(220, easing = androidx.compose.animation.core.FastOutSlowInEasing)) { -it / 2 } +
+                                androidx.compose.animation.fadeOut(tween(140)),
+                        )
+                        .using(androidx.compose.animation.SizeTransform(clip = true) { _, _ -> spring(dampingRatio = 1f, stiffness = 500f) })
+                },
+                contentAlignment = Alignment.BottomStart,
+                label = "line",
+            ) { text ->
                 Txt(text, Type.small.copy(fontWeight = androidx.compose.ui.text.font.FontWeight(600)), on, maxLines = 4)
             }
         }

@@ -30,7 +30,9 @@ import androidx.compose.material.icons.rounded.ContentCopy
 import androidx.compose.material.icons.rounded.Favorite
 import androidx.compose.material.icons.rounded.FavoriteBorder
 import androidx.compose.material.icons.rounded.Info
-import androidx.compose.material.icons.rounded.Mic
+import androidx.compose.material.icons.rounded.Delete
+import androidx.compose.material.icons.rounded.Edit
+import androidx.compose.material.icons.rounded.Person
 import androidx.compose.material.icons.rounded.MoreVert
 import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.RemoveCircleOutline
@@ -43,6 +45,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
@@ -71,7 +74,7 @@ import java.io.File
 /**
  * The three dots of a track, with what the classic player offers that fits here: play next, add to
  * the queue, the album and the artist, send the file, its details. In the queue, "remove" replaces
- * "add". Nothing here changes a file or a playlist.
+ * "add". Nothing here changes a file or a playlist of Music; the app's own playlists can be edited.
  */
 @Composable
 fun TrackMenu(
@@ -81,6 +84,8 @@ fun TrackMenu(
     queueWindow: Int? = null,
     open: Boolean? = null,
     setOpen: ((Boolean) -> Unit)? = null,
+    /** The app's own playlist this row is in, which offers "remove from playlist". */
+    ownPlaylist: String? = null,
 ) {
     var own by remember { mutableStateOf(false) }
     val isOpen = open ?: own
@@ -113,11 +118,15 @@ fun TrackMenu(
                     vm.connection.removeWindow(queueWindow)
                 }
             }
+            item(Icons.AutoMirrored.Rounded.PlaylistAdd, R.string.menu_add_playlist) { vm.addToPlaylist = listOf(track) }
+            if (ownPlaylist != null) {
+                item(Icons.Rounded.RemoveCircleOutline, R.string.menu_remove_playlist) { vm.removeFromPlaylist(ownPlaylist, track.id) }
+            }
             if (library?.albumsByKey?.containsKey(track.albumKey) == true) {
                 item(Icons.Rounded.Album, R.string.menu_go_album) { vm.goTo(Route.AlbumRoute(track.albumKey)) }
             }
             if (library?.artistsByKey?.containsKey(track.artistKey) == true) {
-                item(Icons.Rounded.Mic, R.string.menu_go_artist) { vm.goTo(Route.ArtistRoute(track.artistKey)) }
+                item(Icons.Rounded.Person, R.string.menu_go_artist) { vm.goTo(Route.ArtistRoute(track.artistKey)) }
             }
             item(Icons.Rounded.Share, R.string.menu_share, playable) {
                 val send = Intent(Intent.ACTION_SEND)
@@ -238,21 +247,27 @@ fun LyricsDialog(vm: AppViewModel, track: Track, positionMs: () -> Long, onDismi
                     var active by remember { mutableStateOf(-1) }
                     LaunchedEffect(timed) {
                         while (true) {
-                            val now = positionMs() + vm.prefs.lyricsLeadMs
+                            val now = positionMs() + vm.lyricLeadMs + HIGHLIGHT_LEAD_MS
                             val i = timed.indexOfLast { it.timeMs <= now }
                             if (i != active) {
+                                state.followLine(i, first = active < 0)
                                 active = i
-                                if (i >= 0) state.animateScrollToItem((i - 3).coerceAtLeast(0))
                             }
                             kotlinx.coroutines.delay(120)
                         }
                     }
                     LazyColumn(state = state, contentPadding = PaddingValues(vertical = 8.dp)) {
                         itemsIndexed(timed, key = { i, _ -> i }) { i, line ->
+                            // The colour moves to the sung line gently instead of switching at once.
+                            val color by androidx.compose.animation.animateColorAsState(
+                                if (i == active) p.accent else p.text.copy(alpha = 0.75f),
+                                tween(if (i == active) 260 else 550),
+                                label = "line",
+                            )
                             Text(
                                 line.text,
                                 style = Type.body.copy(fontWeight = androidx.compose.ui.text.font.FontWeight(if (i == active) 700 else 500)),
-                                color = if (i == active) p.accent else p.text.copy(alpha = 0.75f),
+                                color = color,
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .clip(RoundedCornerShape(8.dp))
@@ -297,7 +312,7 @@ fun FavoriteHeart(vm: AppViewModel, trackId: String, tint: Color, size: androidx
 
 /** Menu for a group of tracks: an artist, an album, a playlist, a folder. */
 @Composable
-fun CollectionMenu(vm: AppViewModel, tracks: List<Track>, open: Boolean, setOpen: (Boolean) -> Unit) {
+fun CollectionMenu(vm: AppViewModel, tracks: List<Track>, open: Boolean, playlist: dev.kreal.muzon.data.Playlist? = null, setOpen: (Boolean) -> Unit) {
     DropdownMenu(open, { setOpen(false) }) {
         @Composable
         fun item(icon: ImageVector, text: Int, action: () -> Unit) {
@@ -314,15 +329,21 @@ fun CollectionMenu(vm: AppViewModel, tracks: List<Track>, open: Boolean, setOpen
         item(Icons.Rounded.Shuffle, R.string.shuffle) { vm.connection.play(tracks, shuffled = true) }
         item(Icons.AutoMirrored.Rounded.QueueMusic, R.string.menu_play_next) { vm.connection.playNext(tracks) }
         item(Icons.AutoMirrored.Rounded.PlaylistAdd, R.string.menu_add_queue) { vm.connection.addToQueue(tracks) }
+        item(Icons.AutoMirrored.Rounded.PlaylistAdd, R.string.menu_add_playlist) { vm.addToPlaylist = tracks }
+        // A playlist made in the app can be renamed and deleted from any of its menus.
+        if (playlist?.own == true) {
+            item(Icons.Rounded.Edit, R.string.playlist_rename) { vm.renamingPlaylist = playlist }
+            item(Icons.Rounded.Delete, R.string.playlist_delete) { vm.deletingPlaylist = playlist }
+        }
     }
 }
 
 /** The three dots of a group of tracks, for page headers. */
 @Composable
-fun CollectionMenuButton(vm: AppViewModel, tracks: List<Track>, tint: Color) {
+fun CollectionMenuButton(vm: AppViewModel, tracks: List<Track>, tint: Color, playlist: dev.kreal.muzon.data.Playlist? = null) {
     var open by remember { mutableStateOf(false) }
     Box {
         IconTap(Icons.Rounded.MoreVert, tint, 22.dp, 44.dp, label = stringResource(R.string.menu_more)) { open = true }
-        CollectionMenu(vm, tracks, open) { open = it }
+        CollectionMenu(vm, tracks, open, playlist) { open = it }
     }
 }

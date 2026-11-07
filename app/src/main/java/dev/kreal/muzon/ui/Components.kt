@@ -3,6 +3,8 @@ package dev.kreal.muzon.ui
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.gestures.animateScrollBy
+import androidx.compose.foundation.gestures.scrollBy
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
@@ -231,3 +233,44 @@ fun lettersOf(names: List<String>): List<Pair<Char, Int>> {
     }
     return out
 }
+
+/**
+ * Follows the sung line without fighting the reader, by two marks in the visible part of the list:
+ *  - the line's top never goes above [TOP_MARK] of the height, so it never slides under the faded edge;
+ *  - under it there are always at least two lines, and never less than [ROOM_BELOW] of the height.
+ * While the line sits between the marks nothing moves. When it reaches the lower mark the list glides
+ * until the line's top is back on the upper one. A line the reader scrolled away from is left alone.
+ * [first] places the line on the upper mark once, when the list opens.
+ */
+suspend fun androidx.compose.foundation.lazy.LazyListState.followLine(index: Int, first: Boolean) {
+    if (index < 0) return
+    val info = layoutInfo
+    val visible = info.visibleItemsInfo
+    val viewTop = info.viewportStartOffset
+    val viewEnd = info.viewportEndOffset
+    val height = (viewEnd - viewTop).toFloat()
+    if (first || visible.isEmpty()) {
+        scrollToItem(index)
+        // The line now starts where the content does; move it down to the upper mark.
+        scrollBy(-(height * TOP_MARK - info.beforeContentPadding))
+        return
+    }
+    if (isScrollInProgress) return
+    val line = visible.sumOf { it.size } / visible.size
+    val item = visible.firstOrNull { it.index == index }
+    // The line just below the view: its top is where the line before it ends.
+    val top = item?.offset ?: visible.firstOrNull { it.index == index - 1 }?.let { it.offset + it.size } ?: return
+    val bottom = top + (item?.size ?: line)
+    if (top < viewTop) return // the reader is further down
+    val roomBelow = maxOf(2f * line, height * ROOM_BELOW)
+    val topMark = viewTop + height * TOP_MARK
+    if (bottom > viewEnd - roomBelow) {
+        animateScrollBy(top - topMark, androidx.compose.animation.core.tween(650, easing = androidx.compose.animation.core.CubicBezierEasing(0.25f, 0.1f, 0.25f, 1f)))
+    }
+}
+
+/** Highest point of the sung line, as a share of the lyrics' height. */
+const val TOP_MARK = 0.2f
+
+/** Least room under the sung line, as a share of the lyrics' height (and never under two lines). */
+const val ROOM_BELOW = 0.25f
