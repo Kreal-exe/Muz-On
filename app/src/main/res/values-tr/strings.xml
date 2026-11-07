@@ -110,6 +110,11 @@
     <string name="s_swipe_art">Kapağı kaydırarak parça değiştir</string>
     <string name="s_auto_skip">Çalınamayan dosyaları atla</string>
     <string name="s_keep_playing">Uygulama kapatılınca çalmaya devam et</string>
+    <string name="s_pause_interrupt">Kısa seslerde duraklat</string>
+    <string name="s_pause_interrupt_hint">Mesajlar ve navigasyon müziği kısmak yerine duraklatır</string>
+    <string name="s_recent">“Son eklenenler”</string>
+    <string name="recent_newest">En yeni 100</string>
+    <string name="recent_days">%1$d gün</string>
     <string name="s_seek_step">Önceki/sonraki basılı tutunca atla</string>
     <string name="s_equalizer">Ekolayzer</string>
     <string name="seconds_whole">%1$d sn</string>

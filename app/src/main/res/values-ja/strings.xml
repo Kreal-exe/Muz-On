@@ -110,6 +110,11 @@
     <string name="s_swipe_art">ジャケットをスワイプで曲送り</string>
     <string name="s_auto_skip">再生できないファイルを飛ばす</string>
     <string name="s_keep_playing">アプリを閉じても再生を続ける</string>
+    <string name="s_pause_interrupt">短い通知音で一時停止</string>
+    <string name="s_pause_interrupt_hint">メッセージやナビで音量を下げずに一時停止</string>
+    <string name="s_recent">「最近」の範囲</string>
+    <string name="recent_newest">新しい100曲</string>
+    <string name="recent_days">%1$d日</string>
     <string name="s_seek_step">長押しでスキップする秒数</string>
     <string name="s_equalizer">イコライザー</string>
     <string name="seconds_whole">%1$d秒</string>

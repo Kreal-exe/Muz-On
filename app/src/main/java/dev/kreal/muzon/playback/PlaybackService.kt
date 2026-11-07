@@ -32,20 +32,23 @@ class PlaybackService : MediaSessionService() {
     private val app get() = application as MuzOnApp
     private val favorite = SessionCommand("dev.kreal.muzon.FAVORITE", Bundle.EMPTY)
 
+    private fun audioAttributes(pause: Boolean) = AudioAttributes.Builder()
+        .setUsage(C.USAGE_MEDIA)
+        .setContentType(if (pause) C.AUDIO_CONTENT_TYPE_SPEECH else C.AUDIO_CONTENT_TYPE_MUSIC)
+        .build()
+
     override fun onCreate() {
         super.onCreate()
         val player = ExoPlayer.Builder(this)
-            .setAudioAttributes(
-                AudioAttributes.Builder()
-                    .setUsage(C.USAGE_MEDIA)
-                    .setContentType(C.AUDIO_CONTENT_TYPE_MUSIC)
-                    .build(),
-                true,
-            )
+            .setAudioAttributes(audioAttributes(app.prefs.pauseOnInterrupt), true)
             .setHandleAudioBecomingNoisy(true)
             .setWakeMode(C.WAKE_MODE_LOCAL)
             .build()
         player.skipSilenceEnabled = app.prefs.skipSilence
+        // The player ducks music for a short sound and pauses speech; the setting picks which it does.
+        scope.launch {
+            androidx.compose.runtime.snapshotFlow { app.prefs.pauseOnInterrupt }.collect { player.setAudioAttributes(audioAttributes(it), true) }
+        }
         player.setPlaybackSpeed(app.prefs.speed)
         player.addListener(object : Player.Listener {
             override fun onPlayerError(error: PlaybackException) {

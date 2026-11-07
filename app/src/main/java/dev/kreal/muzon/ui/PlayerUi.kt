@@ -27,6 +27,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -537,6 +538,7 @@ private fun QueueCard(
     listModifier: Modifier = Modifier,
     extraBottom: Dp = 0.dp,
     resetKey: Any? = null,
+    showHeart: Boolean = false, // the heart sits on the artwork's toolbar; the menu has it too
     state: androidx.compose.foundation.lazy.LazyListState = rememberLazyListState(initialFirstVisibleItemIndex = conn.playOrderPosition + 1),
 ) {
     val p = LocalPalette.current
@@ -564,7 +566,7 @@ private fun QueueCard(
                         Txt(current.title.trim(), Type.bodyBold, p.text, maxLines = 2)
                         Txt(listOfNotNull(current.artist, current.album.takeIf { it.isNotBlank() }).joinToString(" · "), Type.small, p.muted)
                     }
-                    FavoriteHeart(vm, current.id, p.muted, 22.dp, 40.dp)
+                    if (showHeart) FavoriteHeart(vm, current.id, p.muted, 22.dp, 40.dp)
                     TrackMenu(vm, current, p.muted, queueWindow = conn.windowIndex)
                 }
             }
@@ -654,6 +656,9 @@ private fun QueueRow(track: Track, offset: Int, dimmed: Boolean, menu: @Composab
 // ---- Compact: mini player that grows into the full one under the finger
 
 private val MINI_BUTTONS = 118.dp
+
+/** Seek bar and buttons under the artwork of the two-column player. */
+private val WIDE_CONTROLS = 112.dp
 
 /**
  * Previous, play and next of the full player, which shrink and fly to their places in the mini player
@@ -755,7 +760,7 @@ private class Geometry(
 
 private fun lerp(a: Float, b: Float, t: Float) = a + (b - a) * t
 
-private fun geometry(density: Density, width: Float, height: Float, tabs: Dp, top: Dp): Geometry = with(density) {
+private fun geometry(density: Density, width: Float, height: Float, tabs: Dp, top: Dp, centred: Float = 0f): Geometry = with(density) {
     val miniHeight = 58.dp.toPx()
     val miniTop = height - tabs.toPx() - miniHeight - 4.dp.toPx()
     val margin = 8.dp.toPx()
@@ -767,8 +772,13 @@ private fun geometry(density: Density, width: Float, height: Float, tabs: Dp, to
         return@with Geometry(
             width, height, miniTop, miniHeight, margin,
             artX = (left - artSize) / 2,
-            // Artwork and controls sit in the middle of the column rather than leaving its lower half empty.
-            artY = max(top.toPx() + 56.dp.toPx(), (height - artSize - 200.dp.toPx()) / 2),
+            // With lyrics the artwork stays up and the lyrics fill the column under the controls;
+            // without them artwork and controls sit in the middle of the column.
+            artY = lerp(
+                top.toPx() + 56.dp.toPx(),
+                max(top.toPx() + 56.dp.toPx(), top.toPx() + (height - top.toPx() - artSize - WIDE_CONTROLS.toPx()) / 2),
+                centred,
+            ),
             artSize = artSize,
             miniArtX = margin + 8.dp.toPx(),
             miniArtY = 8.dp.toPx(),
@@ -808,10 +818,15 @@ fun CompactPlayer(vm: AppViewModel, tabsHeight: Dp, modifier: Modifier = Modifie
     // A track without lyrics never shows a lyrics screen, not even an empty one.
     LaunchedEffect(lyrics) { if (lyrics?.isEmpty == true) vm.lyricsOpen = false }
 
+    // Known once the lyrics of a track are read, so a track change does not bounce the artwork.
+    var lyricsBelow by remember { mutableStateOf(false) }
+    LaunchedEffect(lyrics) { lyrics?.let { lyricsBelow = !it.isEmpty } }
+    val centred by animateFloatAsState(if (lyricsBelow) 0f else 1f, sheetSpring, label = "centred")
+
     var settle by remember { mutableStateOf<Job?>(null) }
     BoxWithConstraints(modifier.fillMaxSize()) {
-        val g = remember(constraints.maxWidth, constraints.maxHeight, tabsHeight, systemTop) {
-            geometry(density, constraints.maxWidth.toFloat(), constraints.maxHeight.toFloat(), tabsHeight, systemTop)
+        val g = remember(constraints.maxWidth, constraints.maxHeight, tabsHeight, systemTop, centred) {
+            geometry(density, constraints.maxWidth.toFloat(), constraints.maxHeight.toFloat(), tabsHeight, systemTop, centred)
         }
         fun settleTo(target: Float, velocity: Float = 0f) {
             settle?.cancel()
@@ -895,11 +910,32 @@ fun CompactPlayer(vm: AppViewModel, tabsHeight: Dp, modifier: Modifier = Modifie
             Column(
                 Modifier
                     .width(with(density) { g.leftWidth.toDp() })
+                    .then(if (g.wide) Modifier.fillMaxHeight() else Modifier)
                     .padding(top = with(density) { (g.artY + g.artSize).toDp() } + if (g.wide) 14.dp else 6.dp, start = if (g.wide) 32.dp else 14.dp, end = if (g.wide) 32.dp else 14.dp)
                     .onPlaced { controlsBottom.floatValue = g.artY + g.artSize + with(density) { 22.dp.toPx() } + it.size.height },
             ) {
                 SeekBar(position, conn, onCover, pageAlpha)
                 MorphingControls(vm, conn, onCover, cover.target, g, { sheetCoords }, pageAlpha)
+                val shown = lyrics
+                if (g.wide && shown != null && !shown.isEmpty) {
+                    // The two-column player has room for all the lyrics under its buttons.
+                    Box(
+                        pageAlpha
+                            .weight(1f)
+                            .fillMaxWidth()
+                            .graphicsLayer {
+                                alpha = 1f - centred
+                                compositingStrategy = androidx.compose.ui.graphics.CompositingStrategy.Offscreen
+                            }
+                            .drawWithContent {
+                                drawContent()
+                                // Lines fade out at both edges instead of being cut.
+                                drawRect(Brush.verticalGradient(0f to Color.Black, 0.1f to Color.Transparent, 0.9f to Color.Transparent, 1f to Color.Black), blendMode = androidx.compose.ui.graphics.BlendMode.DstOut)
+                            },
+                    ) {
+                        LyricsList(shown, position, conn, onCover, lyricStyle(lyricSize(vm.prefs.lyricsSize, big = false)), vm.prefs.lyricsLeadMs)
+                    }
+                }
             }
 
             // Mini row.
@@ -922,6 +958,8 @@ fun CompactPlayer(vm: AppViewModel, tabsHeight: Dp, modifier: Modifier = Modifie
                     Txt(track.title.trim(), Type.bodyBold, onCover)
                     Txt(track.artist, Type.small, onCover.copy(alpha = 0.8f))
                 }
+                // A wide screen has room for the seek bar in the mini player too.
+                if (g.wide) SeekBar(position, conn, onCover, Modifier.weight(1.2f).padding(start = 20.dp))
             }
 
             // One artwork travels from the mini player to the top of the full page.
@@ -945,7 +983,10 @@ fun CompactPlayer(vm: AppViewModel, tabsHeight: Dp, modifier: Modifier = Modifie
                     .then(if (vm.prefs.swipeArtwork) Modifier.swipeForTrack(conn) else Modifier),
             ) {
                 ArtPager(conn, Modifier.fillMaxSize(), { vm.sheet > 0.98f && vm.prefs.swipeArtwork }, 0.dp)
-                CoverLyricLine(vm, position, Modifier.align(Alignment.BottomCenter).graphicsLayer { alpha = ((vm.sheet - 0.7f) / 0.3f).coerceIn(0f, 1f) })
+                // The two-column player shows all the lyrics under its buttons instead.
+                if (!(g.wide && lyricsBelow)) {
+                    CoverLyricLine(vm, position, Modifier.align(Alignment.BottomCenter).graphicsLayer { alpha = ((vm.sheet - 0.7f) / 0.3f).coerceIn(0f, 1f) })
+                }
             }
 
             // Toolbar over the artwork: the way back down.
@@ -962,8 +1003,7 @@ fun CompactPlayer(vm: AppViewModel, tabsHeight: Dp, modifier: Modifier = Modifie
                     if (lyrics?.isEmpty == false) {
                         IconTap(Icons.Rounded.Lyrics, Color.White, 24.dp, 48.dp, label = stringResource(R.string.lyrics)) { vm.lyricsOpen = true }
                     }
-                    // Beside the queue card its own row carries the heart.
-                    if (!g.wide) FavoriteHeart(vm, track.id, Color.White, 26.dp, 48.dp)
+                        FavoriteHeart(vm, track.id, Color.White, 26.dp, 48.dp)
                 }
             }
 
@@ -974,6 +1014,7 @@ fun CompactPlayer(vm: AppViewModel, tabsHeight: Dp, modifier: Modifier = Modifie
                     pageAlpha
                         .fillMaxSize()
                         .padding(start = with(density) { g.leftWidth.toDp() }, top = systemTop + 12.dp, end = 16.dp),
+
                 )
             } else {
                 QueueSheet(vm, g, controlsBottom, sheetScroll, pageAlpha)

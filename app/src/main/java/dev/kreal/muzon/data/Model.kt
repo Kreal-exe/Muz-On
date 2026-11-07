@@ -92,7 +92,17 @@ data class Library(
             .sortedWith(compareBy(Sorting.collator) { it.first })
     }
 
-    val recentlyAdded: List<Track> by lazy { tracks.sortedByDescending { it.dateAddedMs }.take(100) }
+    private val newestFirst: List<Track> by lazy { tracks.sortedByDescending { it.dateAddedMs } }
+
+    /** The 100 newest tracks. */
+    val recentlyAdded: List<Track> by lazy { newestFirst.take(100) }
+
+    /** Tracks added in the last [days] days; 0 means the 100 newest. */
+    fun recentlyAdded(days: Int): List<Track> {
+        if (days <= 0) return recentlyAdded
+        val since = System.currentTimeMillis() - days * 86_400_000L
+        return newestFirst.takeWhile { it.dateAddedMs >= since }
+    }
 
     /** Folder (relative to the music folder, "" for its root) to the tracks directly in it. */
     val folders: Map<String, List<Track>> by lazy {

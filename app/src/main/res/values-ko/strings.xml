@@ -110,6 +110,11 @@
     <string name="s_swipe_art">커버를 밀어 곡 변경</string>
     <string name="s_auto_skip">재생할 수 없는 파일 건너뛰기</string>
     <string name="s_keep_playing">앱을 닫아도 재생 유지</string>
+    <string name="s_pause_interrupt">짧은 알림음에 일시정지</string>
+    <string name="s_pause_interrupt_hint">메시지·내비게이션 시 볼륨을 줄이지 않고 일시정지</string>
+    <string name="s_recent">‘최근’ 범위</string>
+    <string name="recent_newest">최신 100곡</string>
+    <string name="recent_days">%1$d일</string>
     <string name="s_seek_step">길게 눌러 이동</string>
     <string name="s_equalizer">이퀄라이저</string>
     <string name="seconds_whole">%1$d초</string>

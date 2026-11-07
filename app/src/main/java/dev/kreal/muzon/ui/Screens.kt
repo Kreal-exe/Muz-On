@@ -115,7 +115,7 @@ fun RouteContent(route: Route, vm: AppViewModel, library: Library) {
         is Route.ArtistRoute -> library.artistsByKey[route.artistKey]?.let { ArtistScreen(vm, it) }
         is Route.AlbumRoute -> library.albumsByKey[route.albumKey]?.let { AlbumScreen(vm, it) }
         is Route.GenreRoute -> library.genres.firstOrNull { it.first == route.name }?.let { SongsScreen(vm, it.first, it.second, false) }
-        Route.RecentRoute -> SongsScreen(vm, stringResource(R.string.place_recent), library.recentlyAdded, false)
+        Route.RecentRoute -> SongsScreen(vm, stringResource(R.string.place_recent), library.recentlyAdded(vm.prefs.recentDays), false)
         Route.GenresRoute -> GenresScreen(vm, library)
         Route.HistoryRoute -> SongsScreen(vm, stringResource(R.string.place_history), vm.historyTracks(library), false)
         Route.MostPlayedRoute -> SongsScreen(vm, stringResource(R.string.place_most), vm.mostPlayed(library), false)
@@ -172,7 +172,7 @@ private fun Library.count(place: Place, vm: AppViewModel) = when (place) {
     Place.Artists -> artists.size
     Place.Albums -> albums.size
     Place.Songs -> tracks.size
-    Place.Recent -> recentlyAdded.size
+    Place.Recent -> recentlyAdded(vm.prefs.recentDays).size
     Place.Genres -> genres.size
 }
 
@@ -476,7 +476,7 @@ private fun Library.thumbsOf(place: Place, vm: AppViewModel): List<Track> = when
     Place.Artists -> artists.mapNotNull { it.tracks.firstOrNull() }
     Place.Albums -> albums.map { it.tracks.first() }
     Place.Songs -> songs.distinctBy { it.albumKey }
-    Place.Recent -> recentlyAdded.distinctBy { it.albumKey }
+    Place.Recent -> recentlyAdded(vm.prefs.recentDays).distinctBy { it.albumKey }
     Place.Genres -> genres.mapNotNull { it.second.firstOrNull() }
 }.take(4)
 

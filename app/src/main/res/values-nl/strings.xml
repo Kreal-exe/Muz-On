@@ -110,6 +110,11 @@
     <string name="s_swipe_art">Veeg over hoes voor ander nummer</string>
     <string name="s_auto_skip">Onspeelbare bestanden overslaan</string>
     <string name="s_keep_playing">Doorspelen na sluiten app</string>
+    <string name="s_pause_interrupt">Pauzeren bij korte geluiden</string>
+    <string name="s_pause_interrupt_hint">Berichten en navigatie pauzeren de muziek in plaats van zachter te zetten</string>
+    <string name="s_recent">‘Recent’ bevat</string>
+    <string name="recent_newest">100 nieuwste</string>
+    <string name="recent_days">%1$d dagen</string>
     <string name="s_seek_step">Vorige/volgende vasthouden springt</string>
     <string name="s_equalizer">Equalizer</string>
     <string name="seconds_whole">%1$d s</string>

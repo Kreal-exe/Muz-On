@@ -110,6 +110,11 @@
     <string name="s_swipe_art">Cover wischen wechselt den Titel</string>
     <string name="s_auto_skip">Nicht abspielbare Dateien überspringen</string>
     <string name="s_keep_playing">Weiterspielen, wenn die App geschlossen wird</string>
+    <string name="s_pause_interrupt">Bei kurzen Tönen pausieren</string>
+    <string name="s_pause_interrupt_hint">Nachrichten und Navigation pausieren die Musik, statt sie leiser zu machen</string>
+    <string name="s_recent">„Neu“ enthält</string>
+    <string name="recent_newest">100 neueste</string>
+    <string name="recent_days">%1$d Tage</string>
     <string name="s_seek_step">Halten von Zurück/Weiter springt um</string>
     <string name="s_equalizer">Equalizer</string>
     <string name="seconds_whole">%1$d s</string>
