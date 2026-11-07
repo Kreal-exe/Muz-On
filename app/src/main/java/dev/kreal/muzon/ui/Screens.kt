@@ -2,6 +2,7 @@ package dev.kreal.muzon.ui
 
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.gestures.detectDragGestures
@@ -20,6 +21,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.grid.GridCells
@@ -36,6 +38,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowLeft
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.Check
+import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.OpenInFull
 import androidx.compose.material.icons.rounded.Remove
 import androidx.compose.material.icons.rounded.DragHandle
@@ -165,6 +168,9 @@ private fun HomeScreen(vm: AppViewModel, library: Library) {
     val p = LocalPalette.current
     var editing by rememberSaveable { mutableStateOf(false) }
     var moving by remember { mutableStateOf(false) }
+    var query by rememberSaveable { mutableStateOf("") }
+    val q = query.trim().lowercase()
+    androidx.activity.compose.BackHandler(enabled = query.isNotEmpty()) { query = "" }
     val theme = LocalAppTheme.current
     val places = vm.prefs.places
     LazyVerticalGrid(
@@ -175,6 +181,13 @@ private fun HomeScreen(vm: AppViewModel, library: Library) {
         horizontalArrangement = Arrangement.spacedBy(8.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
+        item(key = "search", span = { GridItemSpan(maxLineSpan) }, contentType = "search") {
+            SearchField(query, { query = it })
+        }
+        if (q.isNotEmpty()) {
+            searchResults(vm, library, q)
+            return@LazyVerticalGrid
+        }
         item(key = "places", span = { GridItemSpan(maxLineSpan) }, contentType = "places") {
             PlaceTiles(vm, library, places, theme, editing, { moving = it }) { editing = true }
         }
@@ -183,15 +196,6 @@ private fun HomeScreen(vm: AppViewModel, library: Library) {
         }
         item(key = "actions", span = { GridItemSpan(maxLineSpan) }, contentType = "actions") {
             Row(Modifier.fillMaxWidth().height(34.dp), verticalAlignment = Alignment.CenterVertically) {
-                Row(
-                    Modifier.clip(RoundedCornerShape(8.dp)).clickable { vm.nav.push(Route.SearchRoute) }.padding(4.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Glyph(GlyphKind.Search, 18.dp, p.muted)
-                    Spacer(Modifier.width(5.dp))
-                    Txt(stringResource(R.string.search), Type.small, p.muted)
-                }
-                Spacer(Modifier.width(10.dp))
                 Row(
                     Modifier.clip(RoundedCornerShape(8.dp)).clickable { vm.nav.push(Route.SettingsRoute) }.padding(4.dp),
                     verticalAlignment = Alignment.CenterVertically,
@@ -336,8 +340,9 @@ private fun PlaceTile(vm: AppViewModel, library: Library, place: Place, theme: A
     val on = Blocks.on(color)
     val size = vm.prefs.tileSize(place)
     val haptic = androidx.compose.ui.platform.LocalHapticFeedback.current
-    Box(modifier.height(if (size == TileSize.Large) 112.dp else 70.dp)) {
-        Row(
+    Box(modifier.height(if (size == TileSize.Large) 120.dp else 82.dp)) {
+        // Name on top across the whole tile, count under it, covers in the lower right corner.
+        Box(
             Modifier
                 .fillMaxSize()
                 .block(color, theme, 16.dp)
@@ -350,18 +355,13 @@ private fun PlaceTile(vm: AppViewModel, library: Library, place: Place, theme: A
                         },
                     ),
                 )
-                .padding(horizontal = 12.dp),
-            verticalAlignment = Alignment.CenterVertically,
+                .padding(12.dp),
         ) {
-            Column(Modifier.weight(1f)) {
+            Column(Modifier.align(Alignment.TopStart)) {
                 Txt(place.label(), if (size == TileSize.Half) Type.tile else Type.section, on)
                 Txt(library.count(place).toString(), Type.small, on)
             }
-            if (size == TileSize.Large && place == Place.Playlists && library.playlists.isNotEmpty()) {
-                Mosaic(library.tracksOf(library.playlists.first()), Modifier.size(88.dp))
-            } else {
-                Glyph(place.glyph(), if (size == TileSize.Large) 52.dp else 30.dp, on)
-            }
+            Box(Modifier.align(Alignment.BottomEnd)) { PlaceThumbs(library, place, size) }
         }
         if (editing) {
             // Hide.
@@ -417,6 +417,44 @@ private fun PlaceTile(vm: AppViewModel, library: Library, place: Place, theme: A
     }
 }
 
+private fun Library.thumbsOf(place: Place): List<Track> = when (place) {
+    Place.Playlists -> playlists.mapNotNull { tracksOf(it).firstOrNull() }
+    Place.Artists -> artists.mapNotNull { it.tracks.firstOrNull() }
+    Place.Albums -> albums.map { it.tracks.first() }
+    Place.Songs -> songs.distinctBy { it.albumKey }
+    Place.Recent -> recentlyAdded.distinctBy { it.albumKey }
+    Place.Genres -> genres.mapNotNull { it.second.firstOrNull() }
+}.take(4)
+
+/** What a section holds, in small: covers of its first playlists, artists or albums. */
+@Composable
+private fun PlaceThumbs(library: Library, place: Place, size: TileSize) {
+    val thumbs = remember(library, place) { library.thumbsOf(place) }
+    if (thumbs.isEmpty()) return
+    val round = place == Place.Artists
+    val shape = if (round) CircleShape else Radius6
+    when (size) {
+        TileSize.Large -> Mosaic(thumbs, Modifier.size(76.dp), 10.dp)
+        TileSize.Full -> Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            thumbs.forEach { TrackArt(it, Modifier.size(44.dp), shape) }
+        }
+        TileSize.Half -> Box(Modifier.size(width = 64.dp, height = 38.dp)) {
+            // A small fanned stack, the front one on the right.
+            thumbs.take(3).forEachIndexed { i, track ->
+                TrackArt(
+                    track,
+                    Modifier
+                        .size(34.dp)
+                        .offset(x = (i * 14).dp, y = 2.dp)
+                        .graphicsLayer { rotationZ = (i - 1) * 7f }
+                        .border(1.5.dp, Color.White.copy(alpha = 0.85f), shape),
+                    shape,
+                )
+            }
+        }
+    }
+}
+
 @Composable
 private fun CoverCell(title: String, subtitle: String, art: @Composable () -> Unit, onClick: () -> Unit) {
     val p = LocalPalette.current
@@ -464,6 +502,67 @@ private fun NoLibraryCard(vm: AppViewModel) {
         Box(
             Modifier.clip(RoundedCornerShape(17.dp)).background(on).clickable { picker.launch(musicFolderUri()) }.padding(horizontal = 14.dp, vertical = 7.dp),
         ) { Txt(stringResource(R.string.folder_button), Type.bodyBold, Blocks.Teal) }
+    }
+}
+
+@Composable
+private fun SearchField(query: String, onChange: (String) -> Unit) {
+    val p = LocalPalette.current
+    Row(
+        Modifier.fillMaxWidth().height(42.dp).clip(RoundedCornerShape(21.dp)).background(p.surface).padding(horizontal = 14.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(Icons.Rounded.Search, null, tint = p.muted, modifier = Modifier.size(20.dp))
+        Spacer(Modifier.width(8.dp))
+        Box(Modifier.weight(1f)) {
+            if (query.isEmpty()) Txt(stringResource(R.string.search_hint), Type.body, p.muted)
+            BasicTextField(
+                query,
+                onChange,
+                singleLine = true,
+                textStyle = Type.body.copy(color = p.text),
+                cursorBrush = SolidColor(p.accent),
+                modifier = Modifier.fillMaxWidth(),
+            )
+        }
+        if (query.isNotEmpty()) {
+            IconTap(Icons.Rounded.Close, p.muted, 18.dp, 34.dp) { onChange("") }
+        }
+    }
+}
+
+/** Results in place of the home sections while something is typed in the search field. */
+private fun androidx.compose.foundation.lazy.grid.LazyGridScope.searchResults(vm: AppViewModel, library: Library, q: String) {
+    val artists = library.artists.filter { it.name.lowercase().contains(q) }
+    val albums = library.albums.filter { it.title.lowercase().contains(q) || it.artist.lowercase().contains(q) }.take(30)
+    val songs = library.songs.filter { it.title.lowercase().contains(q) || it.artist.lowercase().contains(q) || it.album.lowercase().contains(q) }.take(200)
+    items(artists, key = { "sa:${it.key}" }, span = { GridItemSpan(maxLineSpan) }) { artist ->
+        val p = LocalPalette.current
+        Row(
+            Modifier.fillMaxWidth().clip(Radius8).clickable { vm.nav.push(Route.ArtistRoute(artist.key)) }.padding(vertical = 4.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            TrackArt(artist.tracks.firstOrNull(), Modifier.size(42.dp), CircleShape)
+            Spacer(Modifier.width(11.dp))
+            Column {
+                Txt(artist.name, Type.bodyBold)
+                Txt(pluralStringResource(R.plurals.songs, artist.tracks.size, artist.tracks.size), Type.small, p.muted)
+            }
+        }
+    }
+    items(albums, key = { "sb:${it.key}" }, contentType = { "cover" }) { album ->
+        CoverCell(album.title, album.artist, { TrackArt(album.tracks.first(), Modifier.fillMaxSize(), Radius8) }) {
+            vm.nav.push(Route.AlbumRoute(album.key))
+        }
+    }
+    items(songs.size, key = { "ss:${songs[it].id}" }, span = { GridItemSpan(maxLineSpan) }) { i ->
+        val conn = vm.connection
+        Box(Modifier.padding(horizontal = 0.dp)) {
+            TrackRow(songs[i], conn.current?.id == songs[i].id, conn.wantsToPlay) { conn.play(songs, i) }
+        }
+    }
+    if (artists.isEmpty() && albums.isEmpty() && songs.isEmpty()) {
+        item(span = { GridItemSpan(maxLineSpan) }) { Txt("—", Type.body, modifier = Modifier.padding(16.dp)) }
     }
 }
 

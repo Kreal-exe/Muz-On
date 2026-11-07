@@ -236,10 +236,11 @@ private fun BackHandling(vm: AppViewModel) {
         }
     }
     val queueRaised by remember { derivedStateOf { vm.queueFull > 0f } }
+    BackHandler(enabled = vm.lyricsOpen) { vm.lyricsOpen = false }
     BackHandler(enabled = queueRaised && sheetOpen) {
         scope.launch { animate(vm.queueFull, 0f, animationSpec = spec) { v, _ -> vm.queueFull = v } }
     }
-    PredictiveBackHandler(enabled = sheetOpen && !queueRaised) { progress ->
+    PredictiveBackHandler(enabled = sheetOpen && !queueRaised && !vm.lyricsOpen) { progress ->
         try {
             progress.collect { event -> vm.sheet = 1f - event.progress * 0.25f }
             scope.launch { animate(vm.sheet, 0f, animationSpec = spec) { v, _ -> vm.sheet = v } }
