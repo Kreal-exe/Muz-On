@@ -118,6 +118,7 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlin.math.abs
+import kotlin.math.max
 import kotlin.math.min
 
 private val sheetSpring = spring<Float>(dampingRatio = 1f, stiffness = 230f)
@@ -766,7 +767,8 @@ private fun geometry(density: Density, width: Float, height: Float, tabs: Dp, to
         return@with Geometry(
             width, height, miniTop, miniHeight, margin,
             artX = (left - artSize) / 2,
-            artY = top.toPx() + 56.dp.toPx(),
+            // Artwork and controls sit in the middle of the column rather than leaving its lower half empty.
+            artY = max(top.toPx() + 56.dp.toPx(), (height - artSize - 200.dp.toPx()) / 2),
             artSize = artSize,
             miniArtX = margin + 8.dp.toPx(),
             miniArtY = 8.dp.toPx(),
@@ -956,11 +958,12 @@ fun CompactPlayer(vm: AppViewModel, tabsHeight: Dp, modifier: Modifier = Modifie
                 contentAlignment = Alignment.CenterStart,
             ) {
                 IconTap(Icons.Rounded.KeyboardArrowDown, Color.White, 30.dp, 48.dp, label = stringResource(R.string.back)) { settleTo(0f) }
-                Row(Modifier.align(Alignment.CenterEnd).padding(end = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+                Row(Modifier.align(Alignment.CenterEnd).padding(end = 6.dp + with(density) { (g.width - g.leftWidth).toDp() }), verticalAlignment = Alignment.CenterVertically) {
                     if (lyrics?.isEmpty == false) {
                         IconTap(Icons.Rounded.Lyrics, Color.White, 24.dp, 48.dp, label = stringResource(R.string.lyrics)) { vm.lyricsOpen = true }
                     }
-                    FavoriteHeart(vm, track.id, Color.White, 26.dp, 48.dp)
+                    // Beside the queue card its own row carries the heart.
+                    if (!g.wide) FavoriteHeart(vm, track.id, Color.White, 26.dp, 48.dp)
                 }
             }
 
