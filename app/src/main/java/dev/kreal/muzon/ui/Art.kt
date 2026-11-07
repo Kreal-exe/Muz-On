@@ -144,7 +144,18 @@ object Art {
 fun TrackArt(track: Track?, modifier: Modifier = Modifier, shape: Shape, large: Boolean = false) {
     val color = remember(track?.id) { track?.let { Art.placeholder(it.id) } ?: Color(0xFF26262B) }
     val context = LocalContext.current
-    val model = remember(track?.id, track?.uri, large) { track?.let { Art.key(it, large) }?.let { Art.request(context, it) } }
+    val model = remember(track?.id, track?.uri, large) {
+        track?.let { Art.key(it, large) }?.let { key ->
+            // While the large picture loads, the small one (usually already in memory) stands in.
+            if (large) {
+                Art.request(context, key).newBuilder()
+                    .placeholderMemoryCacheKey(coil.memory.MemoryCache.Key("art:${key.trackId}:false"))
+                    .build()
+            } else {
+                Art.request(context, key)
+            }
+        }
+    }
     Box(modifier.clip(shape).background(color)) {
         if (model != null) {
             AsyncImage(model = model, contentDescription = null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
