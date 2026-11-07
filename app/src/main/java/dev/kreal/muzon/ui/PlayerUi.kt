@@ -79,6 +79,7 @@ import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.compositeOver
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.graphicsLayer
@@ -182,7 +183,9 @@ private fun ArtPager(conn: PlayerConnection, modifier: Modifier, swipeEnabled: (
     val order = conn.playOrder
     val queue = conn.queue
     val pager = rememberPagerState(initialPage = conn.playOrderPosition) { order.size.coerceAtLeast(1) }
-    LaunchedEffect(conn.playOrderPosition, order.size) {
+    // A new queue (a shuffle of the same list, say) moves to the playing track as well: its pages may
+    // carry the same positions as before, and the pager would otherwise stay on the old track's art.
+    LaunchedEffect(conn.playOrderPosition, order, conn.current?.id) {
         val target = conn.playOrderPosition
         if (pager.currentPage != target && !pager.isScrollInProgress && target < pager.pageCount) {
             if (abs(pager.currentPage - target) > 1) pager.scrollToPage(target) else pager.animateScrollToPage(target)
@@ -218,7 +221,8 @@ private fun ArtPager(conn: PlayerConnection, modifier: Modifier, swipeEnabled: (
         beyondViewportPageCount = 1,
         pageSpacing = 14.dp,
         // By position in the queue: the same track queued twice must not give two pages one key.
-        key = { page -> order.getOrNull(page) ?: (-1 - page) },
+        // ...and by the order itself, so a new order never keeps an old page by its key.
+        key = { page -> (order.getOrNull(page) ?: (-1 - page)).toLong() * 31 + System.identityHashCode(order) },
     ) { page ->
         val track = order.getOrNull(page)?.let { queue.getOrNull(it) } ?: conn.current
         TrackArt(track, Modifier.fillMaxSize(), shape, large = true)
@@ -269,7 +273,7 @@ private fun SeekBar(position: Position, conn: PlayerConnection, on: Color, modif
                     drawRoundRect(on.copy(alpha = 0.26f), Offset(0f, top), Size(size.width, h), r)
                     if (theme == AppTheme.Aero) {
                         drawRoundRect(
-                            Brush.verticalGradient(0f to Color.White, 0.5f to on, 1f to on.copy(alpha = 0.7f), startY = top, endY = top + h),
+                            Brush.verticalGradient(0f to Color.White.copy(alpha = 0.45f).compositeOver(on), 0.5f to on, 1f to on, startY = top, endY = top + h),
                             Offset(0f, top), Size(size.width * fraction, h), r,
                         )
                     } else {
@@ -340,17 +344,29 @@ private fun PlayButton(conn: PlayerConnection, size: Dp, background: Color, fore
     }
 }
 
+/**
+ * Shuffle and repeat: switched on, the icon is full strength on a round backing of its own colour;
+ * switched off, it is faint and bare, so the two can never be mistaken for each other.
+ */
+@Composable
+private fun ModeTap(icon: androidx.compose.ui.graphics.vector.ImageVector, active: Boolean, on: Color, label: String, onClick: () -> Unit) {
+    val k by animateFloatAsState(if (active) 1f else 0f, androidx.compose.animation.core.tween(160), label = "mode")
+    Box(Modifier.size(44.dp), contentAlignment = Alignment.Center) {
+        Box(Modifier.size(40.dp).graphicsLayer { alpha = k }.clip(androidx.compose.foundation.shape.CircleShape).background(on.copy(alpha = 0.2f)))
+        IconTap(icon, on.copy(alpha = 0.38f + 0.62f * k), 24.dp, label = label, onClick = onClick)
+    }
+}
+
 @Composable
 private fun Controls(conn: PlayerConnection, on: Color, cover: Color, big: Dp = 70.dp, modifier: Modifier = Modifier) {
-    val dim = on.copy(alpha = 0.55f)
     Row(modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-        IconTap(Icons.Rounded.Shuffle, if (conn.shuffle) on else dim, 24.dp, label = stringResource(R.string.shuffle)) { conn.toggleShuffle() }
+        ModeTap(Icons.Rounded.Shuffle, conn.shuffle, on, stringResource(R.string.shuffle)) { conn.toggleShuffle() }
         IconTap(Icons.Rounded.SkipPrevious, on, 38.dp, 52.dp, label = stringResource(R.string.previous)) { conn.previous() }
         PlayButton(conn, big, on, cover)
         IconTap(Icons.Rounded.SkipNext, on, 38.dp, 52.dp, label = stringResource(R.string.next)) { conn.next() }
-        IconTap(
+        ModeTap(
             if (conn.repeatMode == Player.REPEAT_MODE_ONE) Icons.Rounded.RepeatOne else Icons.Rounded.Repeat,
-            if (conn.repeatMode == Player.REPEAT_MODE_OFF) dim else on, 24.dp, label = stringResource(R.string.repeat),
+            conn.repeatMode != Player.REPEAT_MODE_OFF, on, stringResource(R.string.repeat),
         ) { conn.cycleRepeat() }
     }
 }
@@ -465,10 +481,15 @@ private fun LyricsList(lyrics: Lyrics, position: Position, conn: PlayerConnectio
     val active = remember(timed) { derivedStateOf { activeLine(timed, position.value.longValue + lead + HIGHLIGHT_LEAD_MS) } }
     // One coroutine follows the lines in turn, so a new line waits for the glide to end instead of
     // cutting it short halfway.
+    // A reader who scrolled the lyrics is left alone for a few seconds.
+    var touchedAt by remember { mutableLongStateOf(0L) }
+    LaunchedEffect(state) {
+        state.interactionSource.interactions.collect { if (it is androidx.compose.foundation.interaction.DragInteraction) touchedAt = System.currentTimeMillis() }
+    }
     LaunchedEffect(active) {
         var placed = false
         snapshotFlow { active.value }.collect { i ->
-            state.followLine(i, first = !placed)
+            state.followLine(i, first = !placed, readerAway = System.currentTimeMillis() - touchedAt < 4000)
             if (i >= 0) placed = true
         }
     }
@@ -586,7 +607,14 @@ private fun QueueCard(
                 }
             }
             Row(Modifier.fillMaxWidth().height(36.dp).padding(horizontal = 14.dp), verticalAlignment = Alignment.CenterVertically) {
-                Txt(stringResource(R.string.up_next) + " · " + formatLong(leftMs), Type.small.copy(fontWeight = androidx.compose.ui.text.font.FontWeight(600)), p.muted)
+                Txt(stringResource(R.string.up_next) + " · " + formatLong(leftMs), Type.small.copy(fontWeight = androidx.compose.ui.text.font.FontWeight(600)), p.muted, Modifier.weight(1f))
+                Tappable({
+                    vm.sheet = 0f
+                    vm.queueFull = 0f
+                    conn.clearQueue()
+                }, Modifier.clip(RoundedCornerShape(12.dp)).padding(horizontal = 8.dp, vertical = 4.dp)) {
+                    Txt(stringResource(R.string.queue_clear), Type.small.copy(fontWeight = androidx.compose.ui.text.font.FontWeight(600)), p.accent)
+                }
             }
         }
         LazyColumn(
@@ -704,7 +732,6 @@ private fun MorphingControls(
     fade: Modifier,
 ) {
     val density = LocalDensity.current
-    val dim = on.copy(alpha = 0.55f)
     // Centres of the mini player's buttons, from its right edge.
     val miniY = g.miniHeight / 2
     val nextX = g.width - with(density) { (12.dp + 20.dp).toPx() }
@@ -723,15 +750,15 @@ private fun MorphingControls(
             },
         )
     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-        Box(fade) { IconTap(Icons.Rounded.Shuffle, if (conn.shuffle) on else dim, 24.dp, label = stringResource(R.string.shuffle)) { conn.toggleShuffle() } }
+        Box(fade) { ModeTap(Icons.Rounded.Shuffle, conn.shuffle, on, stringResource(R.string.shuffle)) { conn.toggleShuffle() } }
         val step = vm.prefs.seekStepSeconds * 1000L
         Box(Modifier.morph(prevX, 26f / 38f)) { HoldButton(Icons.Rounded.SkipPrevious, on, stringResource(R.string.previous), { conn.previous() }) { conn.seekBy(-step) } }
         Box(Modifier.morph(playX, 38f / 64f)) { PlayButton(conn, 64.dp, on, cover) }
         Box(Modifier.morph(nextX, 26f / 38f)) { HoldButton(Icons.Rounded.SkipNext, on, stringResource(R.string.next), { conn.next() }) { conn.seekBy(step) } }
         Box(fade) {
-            IconTap(
+            ModeTap(
                 if (conn.repeatMode == Player.REPEAT_MODE_ONE) Icons.Rounded.RepeatOne else Icons.Rounded.Repeat,
-                if (conn.repeatMode == Player.REPEAT_MODE_OFF) dim else on, 24.dp, label = stringResource(R.string.repeat),
+                conn.repeatMode != Player.REPEAT_MODE_OFF, on, stringResource(R.string.repeat),
             ) { conn.cycleRepeat() }
         }
     }
@@ -974,6 +1001,7 @@ fun CompactPlayer(vm: AppViewModel, tabsHeight: Dp, modifier: Modifier = Modifie
                 // From the very first frame of a move the page is drawn, nearly invisible: drawing it for
                 // the first time costs one long frame, which is hidden there instead of mid-way.
                 alpha = ((vm.sheet - 0.1f) / 0.2f).coerceIn(if (vm.sheet > 0f) WARM_ALPHA else 0f, 1f)
+                        compositingStrategy = androidx.compose.ui.graphics.CompositingStrategy.ModulateAlpha
                 translationY = if (vm.sheet > 0f) 0f else -100000f
             }
             // Controls under the artwork; both stay composed, so nothing is built while the finger moves.
@@ -1030,6 +1058,7 @@ fun CompactPlayer(vm: AppViewModel, tabsHeight: Dp, modifier: Modifier = Modifie
                         // Drawn faintly through the whole move, so closing has no first-draw frame at the end.
                         val visible = vm.sheet < 1f
                         alpha = (1f - vm.sheet / 0.12f).coerceIn(if (visible) WARM_ALPHA else 0f, 1f)
+                        compositingStrategy = androidx.compose.ui.graphics.CompositingStrategy.ModulateAlpha
                         translationY = if (visible) 0f else -100000f // out of reach of touches
                     }
                     // Room for the three buttons, which arrive here from the full player.
@@ -1075,7 +1104,10 @@ fun CompactPlayer(vm: AppViewModel, tabsHeight: Dp, modifier: Modifier = Modifie
                 ArtPager(conn, Modifier.fillMaxSize(), { vm.sheet > 0.98f && vm.prefs.swipeArtwork }, 0.dp)
                 // The two-column player shows all the lyrics under its buttons instead.
                 if (!(g.wide && lyricsBelow)) {
-                    CoverLyricLine(vm, position, Modifier.align(Alignment.BottomCenter).graphicsLayer { alpha = ((vm.sheet - 0.7f) / 0.3f).coerceIn(0f, 1f) })
+                    CoverLyricLine(vm, position, Modifier.align(Alignment.BottomCenter).graphicsLayer {
+                        alpha = ((vm.sheet - 0.7f) / 0.3f).coerceIn(0f, 1f)
+                        compositingStrategy = androidx.compose.ui.graphics.CompositingStrategy.ModulateAlpha
+                    })
                 }
             }
 
@@ -1147,6 +1179,7 @@ fun CompactPlayer(vm: AppViewModel, tabsHeight: Dp, modifier: Modifier = Modifie
                     .height(with(density) { g.miniTop.toDp() } - 6.dp)
                     .graphicsLayer {
                         alpha = (1f - vm.sheet / 0.12f).coerceIn(if (vm.sheet < 1f) WARM_ALPHA else 0f, 1f)
+                        compositingStrategy = androidx.compose.ui.graphics.CompositingStrategy.ModulateAlpha
                         translationY = if (vm.sheet < 1f) 0f else -100000f
                     },
             ) { settleTo(1f) }
@@ -1175,7 +1208,11 @@ private fun QueueSheet(vm: AppViewModel, g: Geometry, restY: androidx.compose.ru
     val stop = remember(listState) { StopAtNext(listState) { vm.connection.playOrderPosition } }
     val queueScroll = remember(sheetScroll, stop) {
         object : NestedScrollConnection {
+            /** Whether the finger began with the list at its very top; only such a drag may lower the card. */
+            var startedAtTop: Boolean? = null
+
             override fun onPreScroll(available: Offset, source: NestedScrollSource): Offset {
+                if (source == NestedScrollSource.UserInput && startedAtTop == null) startedAtTop = !listState.canScrollBackward
                 if (vm.sheet < 1f) return sheetScroll.onPreScroll(available, source)
                 if (available.y < 0 && vm.queueFull < 1f && source == NestedScrollSource.UserInput) {
                     vm.queueFull = (vm.queueFull - available.y / travel()).coerceIn(0f, 1f)
@@ -1189,18 +1226,19 @@ private fun QueueSheet(vm: AppViewModel, g: Geometry, restY: androidx.compose.ru
                 return Velocity.Zero
             }
 
+            // Scrolling back through what played never closes the player, and only lowers a raised card
+            // when the drag began at the top of the list: running into the top mid-drag used to pull
+            // the whole player down into the mini player.
             override fun onPostScroll(consumed: Offset, available: Offset, source: NestedScrollSource): Offset {
-                if (available.y > 0 && source == NestedScrollSource.UserInput) {
-                    if (vm.queueFull > 0f) {
-                        vm.queueFull = (vm.queueFull - available.y / travel()).coerceIn(0f, 1f)
-                        return Offset(0f, available.y)
-                    }
-                    return sheetScroll.onPostScroll(consumed, available, source)
+                if (available.y > 0 && source == NestedScrollSource.UserInput && vm.queueFull > 0f && startedAtTop == true) {
+                    vm.queueFull = (vm.queueFull - available.y / travel()).coerceIn(0f, 1f)
+                    return Offset(0f, available.y)
                 }
                 return Offset.Zero
             }
 
             override suspend fun onPreFling(available: Velocity): Velocity {
+                startedAtTop = null
                 if (vm.sheet < 1f) return sheetScroll.onPreFling(available)
                 val q = vm.queueFull
                 if (q == 0f || q == 1f) {

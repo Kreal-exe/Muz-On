@@ -150,6 +150,17 @@
     <string name="covers_cleared">%1$s boşaltıldı</string>
     <string name="clear">Temizle</string>
     <string name="reset">Sıfırla</string>
+    <string name="queue_clear">Temizle</string>
+    <string name="s_library_file">Music arşivi</string>
+    <string name="library_file_default">Müzik klasöründe Music/Music Library.musiclibrary</string>
+    <string name="s_show_missing">Telefonda olmayan şarkıları göster</string>
+    <string name="s_show_missing_hint">Mac arşivinden, gri; çalınamaz</string>
+    <string name="favourites">Favoriler</string>
+    <string name="s_export">Listeleri Music için dışa aktar</string>
+    <string name="s_export_hint">Listeleriniz M3U8 olarak Download/Muz On içinde; Music veya iTunes: Dosya → Arşiv → Çalma Listesini İçe Aktar</string>
+    <string name="s_playlist_files">Müzik klasöründe listeler</string>
+    <string name="playlist_files_on">Favoriler ve listeleriniz Music/Playlists içine M3U8 olarak kaydedilir</string>
+    <string name="playlist_files_off">Müzik klasörünü yeniden seçip kaydetmeye izin vermek için dokunun</string>
     <string name="s_seek_step">Önceki/sonraki basılı tutunca atla</string>
     <string name="s_equalizer">Ekolayzer</string>
     <string name="seconds_whole">%1$d sn</string>
@@ -174,5 +185,9 @@
     <plurals name="albums">
         <item quantity="one">%d albüm</item>
         <item quantity="other">%d albüm</item>
+    </plurals>
+    <plurals name="playlists_exported">
+        <item quantity="one">%d liste Download/Muz On içine kaydedildi</item>
+        <item quantity="other">%d liste Download/Muz On içine kaydedildi</item>
     </plurals>
 </resources>

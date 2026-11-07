@@ -151,6 +151,17 @@
     <string name="covers_cleared">%1$s freed</string>
     <string name="clear">Clear</string>
     <string name="reset">Reset</string>
+    <string name="queue_clear">Clear</string>
+    <string name="s_library_file">Music library</string>
+    <string name="library_file_default">Music/Music Library.musiclibrary in the music folder</string>
+    <string name="s_show_missing">Show songs not on this phone</string>
+    <string name="s_show_missing_hint">From the Mac library, greyed out; they cannot play</string>
+    <string name="favourites">Favourites</string>
+    <string name="s_export">Export playlists for Music</string>
+    <string name="s_export_hint">Your playlists as M3U8 in Download/Muz On; in Music or iTunes: File → Library → Import Playlist</string>
+    <string name="s_playlist_files">Playlists in the music folder</string>
+    <string name="playlist_files_on">Favourites and your playlists are saved as M3U8 in Music/Playlists</string>
+    <string name="playlist_files_off">Tap to choose the music folder again and allow saving</string>
     <string name="s_seek_step">Hold previous / next to jump</string>
     <string name="s_equalizer">Equaliser</string>
     <string name="seconds_whole">%1$d s</string>
@@ -175,5 +186,9 @@
     <plurals name="albums">
         <item quantity="one">%d album</item>
         <item quantity="other">%d albums</item>
+    </plurals>
+    <plurals name="playlists_exported">
+        <item quantity="one">%d playlist saved to Download/Muz On</item>
+        <item quantity="other">%d playlists saved to Download/Muz On</item>
     </plurals>
 </resources>

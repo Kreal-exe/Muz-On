@@ -150,6 +150,17 @@
     <string name="covers_cleared">已释放 %1$s</string>
     <string name="clear">清除</string>
     <string name="reset">重置</string>
+    <string name="queue_clear">清空</string>
+    <string name="s_library_file">音乐资料库</string>
+    <string name="library_file_default">音乐文件夹中的 Music/Music Library.musiclibrary</string>
+    <string name="s_show_missing">显示不在手机上的歌曲</string>
+    <string name="s_show_missing_hint">来自 Mac 资料库，灰色显示；无法播放</string>
+    <string name="favourites">收藏</string>
+    <string name="s_export">为 Music 导出歌单</string>
+    <string name="s_export_hint">歌单以 M3U8 存到 Download/Muz On；在 Music 或 iTunes 中：文件 → 资料库 → 导入播放列表</string>
+    <string name="s_playlist_files">音乐文件夹中的歌单</string>
+    <string name="playlist_files_on">收藏和歌单以 M3U8 保存在 Music/Playlists</string>
+    <string name="playlist_files_off">点按重新选择音乐文件夹并允许保存</string>
     <string name="s_seek_step">长按上一首/下一首跳转</string>
     <string name="s_equalizer">均衡器</string>
     <string name="seconds_whole">%1$d 秒</string>
@@ -172,5 +183,8 @@
     </plurals>
     <plurals name="albums">
         <item quantity="other">%d 张专辑</item>
+    </plurals>
+    <plurals name="playlists_exported">
+        <item quantity="other">已将 %d 个歌单保存到 Download/Muz On</item>
     </plurals>
 </resources>

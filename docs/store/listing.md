@@ -80,7 +80,7 @@ Russian short description (80): Ваша музыка в ярких цветах
 - Contains ads: No
 - In-app purchases: No
 - Price: Free
-- Contact email: svetadubinskaya.info@gmail.com
+- Contact email: (the developer contact address set in Play Console)
 - Website: optional, e.g. the GitHub repository
 - Privacy policy URL: `PRIVACY_POLICY_URL` (placeholder; the app links to `https://kreal-exe.github.io/Muz-On/privacy.html`, which works once GitHub Pages is on and `docs/privacy.html` is published)
 

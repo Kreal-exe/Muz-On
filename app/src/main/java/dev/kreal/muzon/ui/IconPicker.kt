@@ -48,8 +48,8 @@ import dev.kreal.muzon.R
 
 /** A launcher icon: an <activity-alias> in the manifest that points at MainActivity with its own adaptive icon. */
 enum class AppIcon(val alias: String, val icon: Int, @StringRes val label: Int) {
-    Default("LauncherDefault", R.mipmap.ic_launcher, R.string.icon_orange),
-    Violet("LauncherViolet", R.mipmap.ic_launcher_violet, R.string.icon_violet),
+    Default("LauncherDefault", R.mipmap.ic_launcher, R.string.icon_violet),
+    Orange("LauncherOrange", R.mipmap.ic_launcher_orange, R.string.icon_orange),
     Pink("LauncherPink", R.mipmap.ic_launcher_pink, R.string.icon_pink),
     Teal("LauncherTeal", R.mipmap.ic_launcher_teal, R.string.icon_teal),
     Blue("LauncherBlue", R.mipmap.ic_launcher_blue, R.string.icon_blue),
@@ -63,6 +63,11 @@ enum class AppIcon(val alias: String, val icon: Int, @StringRes val label: Int) 
     fun component(context: Context) = ComponentName(context.packageName, "dev.kreal.muzon.$alias")
 
     companion object {
+        /** The violet alias from before violet became the default: the same look as [Default]. */
+        private const val LEGACY_VIOLET = "LauncherViolet"
+
+        private fun legacy(context: Context) = ComponentName(context.packageName, "dev.kreal.muzon.$LEGACY_VIOLET")
+
         /** The alias the launcher shows now: one switched on here, else the one the manifest enables. */
         fun current(context: Context): AppIcon {
             val pm = context.packageManager
@@ -77,6 +82,9 @@ enum class AppIcon(val alias: String, val icon: Int, @StringRes val label: Int) 
             pm.setComponentEnabledSetting(
                 icon.component(context), PackageManager.COMPONENT_ENABLED_STATE_ENABLED, PackageManager.DONT_KILL_APP,
             )
+            if (pm.getComponentEnabledSetting(legacy(context)) == PackageManager.COMPONENT_ENABLED_STATE_ENABLED) {
+                pm.setComponentEnabledSetting(legacy(context), PackageManager.COMPONENT_ENABLED_STATE_DISABLED, PackageManager.DONT_KILL_APP)
+            }
             entries.filter { it != icon }.forEach {
                 val name = it.component(context)
                 val state = pm.getComponentEnabledSetting(name)

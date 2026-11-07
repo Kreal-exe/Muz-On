@@ -150,6 +150,17 @@
     <string name="covers_cleared">%1$s freigegeben</string>
     <string name="clear">Löschen</string>
     <string name="reset">Zurücksetzen</string>
+    <string name="queue_clear">Leeren</string>
+    <string name="s_library_file">Music-Mediathek</string>
+    <string name="library_file_default">Music/Music Library.musiclibrary im Musikordner</string>
+    <string name="s_show_missing">Titel zeigen, die nicht auf dem Handy sind</string>
+    <string name="s_show_missing_hint">Aus der Mac-Mediathek, ausgegraut; nicht abspielbar</string>
+    <string name="favourites">Favoriten</string>
+    <string name="s_export">Playlists für Music exportieren</string>
+    <string name="s_export_hint">Ihre Playlists als M3U8 in Download/Muz On; in Music oder iTunes: Ablage → Mediathek → Playlist importieren</string>
+    <string name="s_playlist_files">Playlists im Musikordner</string>
+    <string name="playlist_files_on">Favoriten und Ihre Playlists werden als M3U8 in Music/Playlists gespeichert</string>
+    <string name="playlist_files_off">Tippen, um den Musikordner neu zu wählen und Speichern zu erlauben</string>
     <string name="s_seek_step">Halten von Zurück/Weiter springt um</string>
     <string name="s_equalizer">Equalizer</string>
     <string name="seconds_whole">%1$d s</string>
@@ -174,5 +185,9 @@
     <plurals name="albums">
         <item quantity="one">%d Album</item>
         <item quantity="other">%d Alben</item>
+    </plurals>
+    <plurals name="playlists_exported">
+        <item quantity="one">%d Playlist in Download/Muz On gespeichert</item>
+        <item quantity="other">%d Playlists in Download/Muz On gespeichert</item>
     </plurals>
 </resources>

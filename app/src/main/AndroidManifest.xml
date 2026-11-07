@@ -24,7 +24,7 @@
             android:configChanges="orientation|screenSize|smallestScreenSize|screenLayout|density|keyboard|keyboardHidden|navigation|uiMode|fontScale|layoutDirection|locale"
             android:exported="true"
             android:launchMode="singleTask"
-            android:windowSoftInputMode="adjustResize" />
+            android:windowSoftInputMode="adjustResize|stateAlwaysHidden" />
 
         <!-- Launcher icons the user picks in Settings (ui/IconPicker.kt): exactly one alias is enabled at a time. -->
         <activity-alias
@@ -40,6 +40,20 @@
                 <category android:name="android.intent.category.APP_MUSIC" />
             </intent-filter>
         </activity-alias>
+        <activity-alias
+            android:name=".LauncherOrange"
+            android:enabled="false"
+            android:exported="true"
+            android:icon="@mipmap/ic_launcher_orange"
+            android:label="@string/app_name"
+            android:targetActivity=".MainActivity">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+                <category android:name="android.intent.category.APP_MUSIC" />
+            </intent-filter>
+        </activity-alias>
+        <!-- Was the violet icon before violet became the default; kept so a phone that chose it keeps its entry until the app switches it to the default. -->
         <activity-alias
             android:name=".LauncherViolet"
             android:enabled="false"

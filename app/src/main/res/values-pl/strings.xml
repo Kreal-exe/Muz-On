@@ -150,6 +150,17 @@
     <string name="covers_cleared">Zwolniono %1$s</string>
     <string name="clear">Wyczyść</string>
     <string name="reset">Wyzeruj</string>
+    <string name="queue_clear">Wyczyść</string>
+    <string name="s_library_file">Biblioteka Music</string>
+    <string name="library_file_default">Music/Music Library.musiclibrary w folderze muzyki</string>
+    <string name="s_show_missing">Pokazuj utwory, których nie ma na telefonie</string>
+    <string name="s_show_missing_hint">Z biblioteki Maca, wyszarzone; nie da się ich odtworzyć</string>
+    <string name="favourites">Ulubione</string>
+    <string name="s_export">Eksportuj playlisty do Music</string>
+    <string name="s_export_hint">Twoje playlisty jako M3U8 w Download/Muz On; w Music lub iTunes: Plik → Biblioteka → Importuj playlistę</string>
+    <string name="s_playlist_files">Playlisty w folderze muzyki</string>
+    <string name="playlist_files_on">Ulubione i playlisty są zapisywane jako M3U8 w Music/Playlists</string>
+    <string name="playlist_files_off">Dotknij, by wybrać folder muzyki ponownie i zezwolić na zapis</string>
     <string name="s_seek_step">Przytrzymanie wstecz/dalej przewija o</string>
     <string name="s_equalizer">Korektor</string>
     <string name="seconds_whole">%1$d s</string>
@@ -178,5 +189,11 @@
         <item quantity="few">%d albumy</item>
         <item quantity="many">%d albumów</item>
         <item quantity="other">%d albumu</item>
+    </plurals>
+    <plurals name="playlists_exported">
+        <item quantity="one">%d playlista zapisana w Download/Muz On</item>
+        <item quantity="few">%d playlisty zapisane w Download/Muz On</item>
+        <item quantity="many">%d playlist zapisanych w Download/Muz On</item>
+        <item quantity="other">%d playlisty zapisane w Download/Muz On</item>
     </plurals>
 </resources>

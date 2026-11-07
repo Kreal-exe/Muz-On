@@ -165,6 +165,30 @@ class Prefs(context: Context) {
     /** Play on when wired or Bluetooth headphones are connected. */
     var resumeOnConnect: Boolean get() = resumeOnConnectState.value; set(v) { resumeOnConnectState.value = v; put("resumeOnConnect", v) }
 
+    /** Names of the playlist files this app wrote in Music/Playlists, so it only deletes its own. */
+    fun writtenPlaylistFiles(): Set<String> = sp.getStringSet("playlistFiles", emptySet()).orEmpty()
+    fun setWrittenPlaylistFiles(names: Set<String>) { sp.edit().putStringSet("playlistFiles", names).apply() }
+
+    var restoredPlaylists: Boolean
+        get() = sp.getBoolean("restoredPlaylists", false)
+        set(v) { sp.edit().putBoolean("restoredPlaylists", v).apply() }
+
+    private val showMissingState = flag("showMissing", false)
+    /** Also list Mac library tracks whose file is not on this phone (they cannot play). */
+    var showMissing: Boolean get() = showMissingState.value; set(v) { showMissingState.value = v; put("showMissing", v) }
+
+    /**
+     * The Music library folder ("Music Library.musiclibrary") picked in settings; null looks for it in
+     * the music folder, at Music/Music Library.musiclibrary.
+     */
+    var libraryTree: String? by mutableStateOf(sp.getString("libraryTree", null))
+        private set
+
+    fun chooseLibraryTree(uri: String?) {
+        libraryTree = uri
+        sp.edit().putString("libraryTree", uri).apply()
+    }
+
     private val minSecondsState = mutableStateOf(sp.getInt("minSeconds", 0))
     /** Tracks shorter than this many seconds are left out of the library; 0 keeps all. */
     var minTrackSeconds: Int get() = minSecondsState.value; set(v) { minSecondsState.value = v; sp.edit().putInt("minSeconds", v).apply() }
@@ -267,6 +291,10 @@ class Prefs(context: Context) {
 
     fun saveQueue(ids: List<String>, index: Int, position: Long) {
         sp.edit().putString("queue", ids.joinToString(",")).putInt("queueIndex", index).putLong("queuePos", position).apply()
+    }
+
+    fun clearSavedQueue() {
+        sp.edit().remove("queue").remove("queueIndex").remove("queuePos").apply()
     }
 
     fun savePosition(index: Int, position: Long) {

@@ -1,5 +1,7 @@
 package dev.kreal.muzon.ui
 
+import androidx.compose.foundation.gestures.animateScrollBy
+
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -195,6 +197,37 @@ private fun AppViewModel.openPlace(place: Place) {
 
 // ---- Home
 
+/**
+ * One smooth glide to the top, as in Music on the iPhone: the distance is estimated from the rows on
+ * screen and run as a single animation, then snapped exactly. The lazy list's own animation to an
+ * item far away jumps part of the way first and then slides, which reads as a jerk.
+ */
+suspend fun androidx.compose.foundation.lazy.LazyListState.glideToTop() {
+    val info = layoutInfo.visibleItemsInfo
+    if (info.isEmpty()) return
+    val row = info.sumOf { it.size } / info.size
+    val distance = firstVisibleItemIndex * row + firstVisibleItemScrollOffset
+    animateScrollBy(-distance.toFloat() - row, androidx.compose.animation.core.tween(380, easing = androidx.compose.animation.core.FastOutSlowInEasing))
+    scrollToItem(0)
+}
+
+suspend fun androidx.compose.foundation.lazy.grid.LazyGridState.glideToTop() {
+    val info = layoutInfo.visibleItemsInfo
+    if (info.isEmpty()) return
+    val perRow = info.count { it.row == info.first().row }.coerceAtLeast(1)
+    val row = info.maxOf { it.size.height } + 10
+    val distance = firstVisibleItemIndex / perRow * row + firstVisibleItemScrollOffset
+    animateScrollBy(-distance.toFloat() - row, androidx.compose.animation.core.tween(380, easing = androidx.compose.animation.core.FastOutSlowInEasing))
+    scrollToItem(0)
+}
+
+/** Scrolls a tab's first page to the top when its tab is tapped again. */
+@Composable
+fun ScrollToTopOnTap(vm: AppViewModel, tab: Tab, scroll: suspend () -> Unit) {
+    val taps = vm.nav.topTaps[tab] ?: 0
+    LaunchedEffect(taps) { if (taps > 0) scroll() }
+}
+
 @Composable
 private fun HomeScreen(vm: AppViewModel, library: Library) {
     val p = LocalPalette.current
@@ -202,10 +235,18 @@ private fun HomeScreen(vm: AppViewModel, library: Library) {
     var moving by remember { mutableStateOf(false) }
     var query by rememberSaveable { mutableStateOf("") }
     val q = query.trim().lowercase()
-    androidx.activity.compose.BackHandler(enabled = query.isNotEmpty()) { query = "" }
+    // Back empties the search and puts the keyboard away with it.
+    val focusManager = androidx.compose.ui.platform.LocalFocusManager.current
+    androidx.activity.compose.BackHandler(enabled = query.isNotEmpty()) {
+        query = ""
+        focusManager.clearFocus(force = true)
+    }
     val theme = LocalAppTheme.current
     val places = vm.prefs.places
+    val grid = androidx.compose.foundation.lazy.grid.rememberLazyGridState()
+    ScrollToTopOnTap(vm, Tab.Home) { grid.glideToTop() }
     LazyVerticalGrid(
+        state = grid,
         columns = GridCells.Adaptive(100.dp),
         modifier = Modifier.fillMaxSize(),
         userScrollEnabled = !moving, // a tile under the finger must not drag the page with it
@@ -404,7 +445,7 @@ private fun PlaceTile(vm: AppViewModel, library: Library, place: Place, theme: A
                     if (editing) Modifier else Modifier.combinedClickable(
                         onClick = { vm.openPlace(place) },
                         onLongClick = {
-                            haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress)
+                            if (vm.prefs.haptics) haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress)
                             onEdit()
                         },
                     ),
@@ -570,6 +611,11 @@ private fun NoLibraryCard(vm: AppViewModel) {
 @Composable
 private fun SearchField(query: String, onChange: (String) -> Unit) {
     val p = LocalPalette.current
+    // Coming back to the app must not land in the search field with the keyboard up: the window
+    // would otherwise give the field back the focus it had when the app was left.
+    val focusManager = androidx.compose.ui.platform.LocalFocusManager.current
+    androidx.lifecycle.compose.LifecycleEventEffect(androidx.lifecycle.Lifecycle.Event.ON_STOP) { focusManager.clearFocus(force = true) }
+    androidx.lifecycle.compose.LifecycleEventEffect(androidx.lifecycle.Lifecycle.Event.ON_START) { focusManager.clearFocus(force = true) }
     Row(
         Modifier.fillMaxWidth().height(42.dp).clip(RoundedCornerShape(21.dp)).background(p.surface).padding(horizontal = 14.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -672,8 +718,11 @@ private fun RootTitle(text: String, modifier: Modifier = Modifier) {
 private fun PlaylistsScreen(vm: AppViewModel, library: Library) {
     val p = LocalPalette.current
     val theme = LocalAppTheme.current
+    val list = rememberLazyListState()
+    ScrollToTopOnTap(vm, Tab.Playlists) { list.glideToTop() }
     LazyColumn(
         Modifier.fillMaxSize(),
+        state = list,
         contentPadding = PaddingValues(start = 10.dp, end = 10.dp, top = statusTop() + 4.dp, bottom = LocalBottomSpace.current + 10.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
@@ -725,6 +774,7 @@ private fun PlaylistsScreen(vm: AppViewModel, library: Library) {
 private fun ArtistsScreen(vm: AppViewModel, library: Library) {
     val p = LocalPalette.current
     val state = rememberLazyListState()
+    ScrollToTopOnTap(vm, Tab.Artists) { state.glideToTop() }
     val letters = remember(library) { lettersOf(library.artists.map { it.name }) }
     Box(Modifier.fillMaxSize()) {
         LazyColumn(state = state, modifier = Modifier.fillMaxSize(), contentPadding = PaddingValues(end = 18.dp, top = statusTop() + 4.dp, bottom = LocalBottomSpace.current + 10.dp)) {
@@ -755,7 +805,10 @@ private fun ArtistsScreen(vm: AppViewModel, library: Library) {
 @Composable
 private fun AlbumsScreen(vm: AppViewModel, library: Library) {
     val columns = vm.prefs.albumColumns
+    val grid = androidx.compose.foundation.lazy.grid.rememberLazyGridState()
+    ScrollToTopOnTap(vm, Tab.Albums) { grid.glideToTop() }
     LazyVerticalGrid(
+        state = grid,
         columns = if (columns > 0) GridCells.Fixed(columns) else GridCells.Adaptive(104.dp),
         modifier = Modifier.fillMaxSize(),
         contentPadding = PaddingValues(start = 10.dp, end = 10.dp, top = statusTop() + 4.dp, bottom = LocalBottomSpace.current + 10.dp),
@@ -820,6 +873,7 @@ private fun SongsScreen(vm: AppViewModel, title: String, base: List<Track>, isRo
     val tracks = remember(base, mode, reversed) { Sorting.apply(mode, reversed, base) }
     // Letters only make sense while the list goes by title.
     val byTitle = mode == PlaylistSort.Title || (isRoot && mode == PlaylistSort.AsInMusic)
+    if (isRoot) ScrollToTopOnTap(vm, Tab.Songs) { state.glideToTop() }
     val letters = remember(tracks, isRoot, byTitle, reversed) { if (isRoot && byTitle && !reversed) lettersOf(tracks.map { it.title }) else emptyList() }
     Box(Modifier.fillMaxSize()) {
         LazyColumn(
@@ -860,7 +914,7 @@ private fun SongsScreen(vm: AppViewModel, title: String, base: List<Track>, isRo
                 TrackRow(track, conn.current?.id == track.id, conn.wantsToPlay, menu = { o, set -> TrackMenu(vm, track, LocalPalette.current.muted, open = o, setOpen = set) }) { conn.play(tracks, i) }
             }
         }
-        LetterRail(letters, state, 2, Modifier.align(Alignment.CenterEnd).padding(top = statusTop(), bottom = LocalBottomSpace.current))
+        LetterRail(letters, state, 3, Modifier.align(Alignment.CenterEnd).padding(top = statusTop(), bottom = LocalBottomSpace.current))
     }
 }
 
@@ -1075,7 +1129,16 @@ private fun AlbumScreen(vm: AppViewModel, album: Album) {
                     Txt(album.title, Type.section, maxLines = 3)
                     Spacer(Modifier.height(3.dp))
                     Txt(album.artist, Type.body, p.muted)
-                    if (album.year > 0) Txt(album.year.toString(), Type.small, p.muted)
+                    // Year, number of songs and total length, as the classic player shows them.
+                    Txt(
+                        listOfNotNull(
+                            album.year.takeIf { it > 0 }?.toString(),
+                            pluralStringResource(R.plurals.songs, album.tracks.size, album.tracks.size),
+                            formatLong(album.tracks.sumOf { it.durationMs }),
+                        ).joinToString(" · "),
+                        Type.small,
+                        p.muted,
+                    )
                 }
             }
         }

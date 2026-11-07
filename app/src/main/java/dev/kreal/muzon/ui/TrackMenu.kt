@@ -245,12 +245,16 @@ fun LyricsDialog(vm: AppViewModel, track: Track, positionMs: () -> Long, onDismi
                     val timed = current.timed
                     val state = rememberLazyListState()
                     var active by remember { mutableStateOf(-1) }
+                    var touchedAt by remember { mutableStateOf(0L) }
+                    LaunchedEffect(state) {
+                        state.interactionSource.interactions.collect { if (it is androidx.compose.foundation.interaction.DragInteraction) touchedAt = System.currentTimeMillis() }
+                    }
                     LaunchedEffect(timed) {
                         while (true) {
                             val now = positionMs() + vm.lyricLeadMs + HIGHLIGHT_LEAD_MS
                             val i = timed.indexOfLast { it.timeMs <= now }
                             if (i != active) {
-                                state.followLine(i, first = active < 0)
+                                state.followLine(i, first = active < 0, readerAway = System.currentTimeMillis() - touchedAt < 4000)
                                 active = i
                             }
                             kotlinx.coroutines.delay(120)
