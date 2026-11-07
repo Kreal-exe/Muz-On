@@ -73,6 +73,8 @@
     <string name="size_medium">中</string>
     <string name="size_large">大</string>
     <string name="s_keep_screen">显示歌词时保持屏幕常亮</string>
+    <string name="up_next">接下来</string>
+    <string name="s_lyric_popup">在迷你播放器上方显示当前歌词</string>
     <string name="s_about">关于</string>
     <string name="s_privacy">隐私政策</string>
     <plurals name="songs">

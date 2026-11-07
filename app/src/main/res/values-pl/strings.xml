@@ -73,6 +73,8 @@
     <string name="size_medium">Średni</string>
     <string name="size_large">Duży</string>
     <string name="s_keep_screen">Nie wygaszaj ekranu przy tekście</string>
+    <string name="up_next">Następne</string>
+    <string name="s_lyric_popup">Bieżący wiersz nad minipanelem</string>
     <string name="s_about">O aplikacji</string>
     <string name="s_privacy">Prywatność</string>
     <plurals name="songs">

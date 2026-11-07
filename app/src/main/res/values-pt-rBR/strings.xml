@@ -73,6 +73,8 @@
     <string name="size_medium">Médio</string>
     <string name="size_large">Grande</string>
     <string name="s_keep_screen">Manter a tela ligada com a letra</string>
+    <string name="up_next">A seguir</string>
+    <string name="s_lyric_popup">Linha atual sobre o miniplayer</string>
     <string name="s_about">Sobre</string>
     <string name="s_privacy">Privacidade</string>
     <plurals name="songs">

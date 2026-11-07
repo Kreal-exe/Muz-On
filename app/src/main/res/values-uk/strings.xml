@@ -73,6 +73,8 @@
     <string name="size_medium">Середній</string>
     <string name="size_large">Великий</string>
     <string name="s_keep_screen">Не вимикати екран із текстом</string>
+    <string name="up_next">Далі</string>
+    <string name="s_lyric_popup">Рядок тексту над міні-плеєром</string>
     <string name="s_about">Про застосунок</string>
     <string name="s_privacy">Політика конфіденційності</string>
     <plurals name="songs">

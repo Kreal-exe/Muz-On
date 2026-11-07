@@ -20,17 +20,21 @@ data class Lyrics(val timed: List<LyricLine>, val plain: List<String>) {
 object LyricsReader {
     private val STAMP = Regex("""\[(\d{1,3}):(\d{1,2})(?:[.:](\d{1,3}))?]""")
     private val META = Regex("""^\[[a-zA-Z]+:.*]$""")
+    private val cache = object : LinkedHashMap<String, Lyrics>(16, 0.75f, true) {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, Lyrics>) = size > 12
+    }
 
     init {
         Logger.getLogger("org.jaudiotagger").level = Level.OFF
     }
 
     suspend fun read(track: Track): Lyrics = withContext(Dispatchers.IO) {
+        synchronized(cache) { cache[track.id] }?.let { return@withContext it }
         val path = track.filePath ?: return@withContext Lyrics(emptyList(), emptyList())
         val blocks = runCatching {
             AudioFileIO.read(File(path)).tag?.getAll(FieldKey.LYRICS).orEmpty()
         }.getOrDefault(emptyList())
-        parse(blocks)
+        parse(blocks).also { synchronized(cache) { cache[track.id] = it } }
     }
 
     fun parse(blocks: List<String>): Lyrics {
