@@ -27,7 +27,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxHeight
-import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.draw.drawWithCache
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -400,7 +400,10 @@ private fun CoverLyricLine(vm: AppViewModel, position: Position, modifier: Modif
     Box(
         modifier
             .fillMaxWidth()
-            .drawBehind { drawRect(Brush.verticalGradient(0f to Color.Transparent, 1f to Color.Black.copy(alpha = 0.62f))) }
+            .drawWithCache {
+                val shade = Brush.verticalGradient(0f to Color.Transparent, 1f to Color.Black.copy(alpha = 0.62f))
+                onDrawBehind { drawRect(shade) }
+            }
             .padding(start = 16.dp, end = 16.dp, top = 40.dp, bottom = 16.dp),
         contentAlignment = Alignment.BottomCenter,
     ) {
@@ -453,12 +456,18 @@ private fun FullLyrics(vm: AppViewModel, position: Position, modifier: Modifier)
 private fun LyricsList(lyrics: Lyrics, position: Position, conn: PlayerConnection, on: Color, style: androidx.compose.ui.text.TextStyle, leadMs: Int) {
     val state = rememberLazyListState()
     val timed = lyrics.timed
+    val lead by androidx.compose.runtime.rememberUpdatedState(leadMs)
     // The fade starts a little early, so the line is lit by the time it is sung.
-    val active by remember(timed, leadMs) { derivedStateOf { activeLine(timed, position.value.longValue + leadMs + HIGHLIGHT_LEAD_MS) } }
-    var placed by remember(lyrics) { mutableStateOf(false) }
+    // Kept as a state, not a value: only the two rows whose highlight changes recompose.
+    val active = remember(timed) { derivedStateOf { activeLine(timed, position.value.longValue + lead + HIGHLIGHT_LEAD_MS) } }
+    // One coroutine follows the lines in turn, so a new line waits for the glide to end instead of
+    // cutting it short halfway.
     LaunchedEffect(active) {
-        state.followLine(active, first = !placed)
-        if (active >= 0) placed = true
+        var placed = false
+        snapshotFlow { active.value }.collect { i ->
+            state.followLine(i, first = !placed)
+            if (i >= 0) placed = true
+        }
     }
     LazyColumn(
         state = state,
@@ -466,7 +475,8 @@ private fun LyricsList(lyrics: Lyrics, position: Position, conn: PlayerConnectio
         contentPadding = PaddingValues(vertical = 40.dp),
     ) {
         itemsIndexed(timed, key = { i, _ -> i }, contentType = { _, _ -> 0 }) { i, line ->
-            LyricRow(line, i == active, on, style) {
+            val isActive by remember(i) { derivedStateOf { active.value == i } }
+            LyricRow(line, isActive, on, style) {
                 conn.seekTo(line.timeMs)
                 position.value.longValue = line.timeMs
             }
@@ -499,8 +509,11 @@ private fun LyricRow(line: LyricLine, active: Boolean, on: Color, style: android
                 val scale = 0.94f + 0.06f * shown
                 scaleX = scale
                 scaleY = scale
+                // Plain text never overlaps itself, so the alpha can go straight on the glyphs
+                // instead of drawing every dimmed line into its own offscreen buffer.
+                compositingStrategy = androidx.compose.ui.graphics.CompositingStrategy.ModulateAlpha
             }
-            .clip(RoundedCornerShape(8.dp))
+            .clip(Radius8)
             .clickable(onClick = onTap)
             .padding(vertical = 6.dp),
     )
@@ -632,7 +645,11 @@ private fun QueueRow(track: Track, offset: Int, dimmed: Boolean, menu: @Composab
             .fillMaxWidth()
             .clickable(onClick = onClick)
             .padding(horizontal = 12.dp, vertical = 6.dp)
-            .graphicsLayer { alpha = if (dimmed) 0.5f else 1f },
+            // Same look without an offscreen buffer for each dimmed row.
+            .graphicsLayer {
+                alpha = if (dimmed) 0.5f else 1f
+                compositingStrategy = androidx.compose.ui.graphics.CompositingStrategy.ModulateAlpha
+            },
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Box(Modifier.width(30.dp), contentAlignment = Alignment.Center) {
@@ -906,22 +923,13 @@ fun CompactPlayer(vm: AppViewModel, tabsHeight: Dp, modifier: Modifier = Modifie
         }
 
         // The page behind dims as the player rises, which gives the sheet its depth.
-        Box(Modifier.fillMaxSize().drawBehind { if (vm.sheet > 0f) drawRect(Color.Black.copy(alpha = 0.6f * vm.sheet)) })
+        // Its own layer, so redrawing it each frame redraws nothing else.
+        Box(Modifier.fillMaxSize().graphicsLayer().drawBehind { if (vm.sheet > 0f) drawRect(Color.Black.copy(alpha = 0.6f * vm.sheet)) })
         Box(
             Modifier
                 .fillMaxSize()
                 .preferredFrameRate(vm.topFrameRate)
                 .graphicsLayer { translationY = (1f - vm.sheet) * g.miniTop }
-                .drawBehind {
-                    val f = vm.sheet
-                    val inset = lerp(g.miniMargin, 0f, f)
-                    drawRoundRect(
-                        cover.fill.value,
-                        Offset(inset, 0f),
-                        Size(size.width - inset * 2, lerp(g.miniHeight, size.height, f)),
-                        CornerRadius(if (f < 0.9f) lerp(14.dp.toPx(), 28.dp.toPx(), f / 0.9f) else lerp(28.dp.toPx(), 0f, (f - 0.9f) / 0.1f)),
-                    )
-                }
                 .draggable(
                     state = dragState,
                     orientation = Orientation.Vertical,
@@ -937,6 +945,23 @@ fun CompactPlayer(vm: AppViewModel, tabsHeight: Dp, modifier: Modifier = Modifie
                     },
                 ),
         ) {
+            // The sheet's background is drawn in a layer of its own: it changes on every frame, and
+            // drawn on the sheet itself it made the whole sheet record its drawing again each time.
+            Box(
+                Modifier
+                    .fillMaxSize()
+                    .graphicsLayer()
+                    .drawBehind {
+                        val f = vm.sheet
+                        val inset = lerp(g.miniMargin, 0f, f)
+                        drawRoundRect(
+                            cover.fill.value,
+                            Offset(inset, 0f),
+                            Size(size.width - inset * 2, lerp(g.miniHeight, size.height, f)),
+                            CornerRadius(if (f < 0.9f) lerp(14.dp.toPx(), 28.dp.toPx(), f / 0.9f) else lerp(28.dp.toPx(), 0f, (f - 0.9f) / 0.1f)),
+                        )
+                    },
+            )
             // The page stays whole while it slides and only fades in the last stretch, where the mini
             // player takes over: no moment of an empty coloured block.
             val pageAlpha = Modifier.graphicsLayer {
@@ -947,6 +972,8 @@ fun CompactPlayer(vm: AppViewModel, tabsHeight: Dp, modifier: Modifier = Modifie
             val controlsBottom = remember { mutableFloatStateOf(g.artSize + with(density) { 140.dp.toPx() }) }
             var sheetCoords by remember { mutableStateOf<androidx.compose.ui.layout.LayoutCoordinates?>(null) }
             Box(Modifier.fillMaxSize().onPlaced { sheetCoords = it })
+            // Read through a derived state: reading the sheet here recomposed the whole player on every frame.
+            val dialogShown by remember { derivedStateOf { vm.lyricsOpen && vm.sheet > 0.5f } }
             Column(
                 Modifier
                     .width(with(density) { g.leftWidth.toDp() })
@@ -966,14 +993,19 @@ fun CompactPlayer(vm: AppViewModel, tabsHeight: Dp, modifier: Modifier = Modifie
                             .weight(1f)
                             .fillMaxWidth()
                             .graphicsLayer { alpha = 1f - centred }
-                            .drawWithContent {
-                                drawContent()
+                            .drawWithCache {
                                 // Lines fade into the background at both edges. Painting the background colour
                                 // over them costs nothing; cutting them out needed a layer of the whole column
-                                // on every frame, which made the glide stutter.
+                                // on every frame, which made the glide stutter. The brushes are made once per
+                                // size and colour, not on every frame of the glide.
                                 val bg = cover.fill.value
-                                drawRect(Brush.verticalGradient(0f to bg, 1f to bg.copy(alpha = 0f), endY = size.height * 0.12f))
-                                drawRect(Brush.verticalGradient(0f to bg.copy(alpha = 0f), 1f to bg, startY = size.height * 0.88f, endY = size.height))
+                                val topFade = Brush.verticalGradient(0f to bg, 1f to bg.copy(alpha = 0f), endY = size.height * 0.12f)
+                                val bottomFade = Brush.verticalGradient(0f to bg.copy(alpha = 0f), 1f to bg, startY = size.height * 0.88f, endY = size.height)
+                                onDrawWithContent {
+                                    drawContent()
+                                    drawRect(topFade)
+                                    drawRect(bottomFade)
+                                }
                             },
                     ) {
                         LyricsList(shown, position, conn, onCover, lyricStyle(lyricSize(vm.prefs.lyricsSize, big = false)), vm.lyricLeadMs)
@@ -1043,7 +1075,10 @@ fun CompactPlayer(vm: AppViewModel, tabsHeight: Dp, modifier: Modifier = Modifie
                 pageAlpha
                     .fillMaxWidth()
                     .height(systemTop + 52.dp)
-                    .drawBehind { drawRect(Brush.verticalGradient(0f to Color.Black.copy(alpha = 0.45f), 1f to Color.Transparent)) }
+                    .drawWithCache {
+                        val shade = Brush.verticalGradient(0f to Color.Black.copy(alpha = 0.45f), 1f to Color.Transparent)
+                        onDrawBehind { drawRect(shade) }
+                    }
                     .padding(top = systemTop, start = 4.dp),
                 contentAlignment = Alignment.CenterStart,
             ) {
@@ -1087,7 +1122,7 @@ fun CompactPlayer(vm: AppViewModel, tabsHeight: Dp, modifier: Modifier = Modifie
             } else {
                 QueueSheet(vm, g, controlsBottom, sheetScroll, pageAlpha)
             }
-            if (vm.lyricsOpen && vm.sheet > 0.5f) LyricsDialog(vm, track, { conn.positionMs }) { vm.lyricsOpen = false }
+            if (dialogShown) LyricsDialog(vm, track, { conn.positionMs }) { vm.lyricsOpen = false }
 
         }
 
