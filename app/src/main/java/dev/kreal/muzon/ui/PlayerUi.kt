@@ -853,7 +853,7 @@ fun CompactPlayer(vm: AppViewModel, tabsHeight: Dp, modifier: Modifier = Modifie
         Box(
             Modifier
                 .fillMaxSize()
-                .preferredFrameRate(FrameRateCategory.High)
+                .preferredFrameRate(vm.topFrameRate)
                 .graphicsLayer { translationY = (1f - vm.sheet) * g.miniTop }
                 .drawBehind {
                     val f = vm.sheet
