@@ -215,7 +215,8 @@ private fun ArtPager(conn: PlayerConnection, modifier: Modifier, swipeEnabled: (
         userScrollEnabled = canSwipe,
         beyondViewportPageCount = 1,
         pageSpacing = 14.dp,
-        key = { page -> order.getOrNull(page)?.let { queue.getOrNull(it)?.id } ?: page },
+        // By position in the queue: the same track queued twice must not give two pages one key.
+        key = { page -> order.getOrNull(page) ?: (-1 - page) },
     ) { page ->
         val track = order.getOrNull(page)?.let { queue.getOrNull(it) } ?: conn.current
         TrackArt(track, Modifier.fillMaxSize(), shape, large = true)
@@ -677,6 +678,9 @@ const val HIGHLIGHT_LEAD_MS = 150
 /** What wireless headphones add before a sound is heard, on top of what the phone reports. */
 const val WIRELESS_DELAY_MS = 250
 
+/** Alpha of a part kept drawn while out of sight, so its first drawing is not a stutter. */
+private const val WARM_ALPHA = 0.004f
+
 private val MINI_BUTTONS = 118.dp
 
 /** Seek bar and buttons under the artwork of the two-column player. */
@@ -965,8 +969,10 @@ fun CompactPlayer(vm: AppViewModel, tabsHeight: Dp, modifier: Modifier = Modifie
             // The page stays whole while it slides and only fades in the last stretch, where the mini
             // player takes over: no moment of an empty coloured block.
             val pageAlpha = Modifier.graphicsLayer {
-                alpha = ((vm.sheet - 0.1f) / 0.2f).coerceIn(0f, 1f)
-                translationY = if (vm.sheet > 0.05f) 0f else -100000f
+                // From the very first frame of a move the page is drawn, nearly invisible: drawing it for
+                // the first time costs one long frame, which is hidden there instead of mid-way.
+                alpha = ((vm.sheet - 0.1f) / 0.2f).coerceIn(if (vm.sheet > 0f) WARM_ALPHA else 0f, 1f)
+                translationY = if (vm.sheet > 0f) 0f else -100000f
             }
             // Controls under the artwork; both stay composed, so nothing is built while the finger moves.
             val controlsBottom = remember { mutableFloatStateOf(g.artSize + with(density) { 140.dp.toPx() }) }
@@ -1019,8 +1025,9 @@ fun CompactPlayer(vm: AppViewModel, tabsHeight: Dp, modifier: Modifier = Modifie
                     .fillMaxWidth()
                     .height(with(density) { g.miniHeight.toDp() })
                     .graphicsLayer {
-                        val visible = vm.sheet < 0.12f
-                        alpha = (1f - vm.sheet / 0.12f).coerceIn(0f, 1f)
+                        // Drawn faintly through the whole move, so closing has no first-draw frame at the end.
+                        val visible = vm.sheet < 1f
+                        alpha = (1f - vm.sheet / 0.12f).coerceIn(if (visible) WARM_ALPHA else 0f, 1f)
                         translationY = if (visible) 0f else -100000f // out of reach of touches
                     }
                     // Room for the three buttons, which arrive here from the full player.
@@ -1137,8 +1144,8 @@ fun CompactPlayer(vm: AppViewModel, tabsHeight: Dp, modifier: Modifier = Modifie
                     .fillMaxWidth()
                     .height(with(density) { g.miniTop.toDp() } - 6.dp)
                     .graphicsLayer {
-                        alpha = (1f - vm.sheet / 0.12f).coerceIn(0f, 1f)
-                        translationY = if (vm.sheet < 0.12f) 0f else -100000f
+                        alpha = (1f - vm.sheet / 0.12f).coerceIn(if (vm.sheet < 1f) WARM_ALPHA else 0f, 1f)
+                        translationY = if (vm.sheet < 1f) 0f else -100000f
                     },
             ) { settleTo(1f) }
         }

@@ -294,6 +294,7 @@ fun SettingsScreen(vm: AppViewModel, library: Library) {
             }
         }
 
+        item { AppIconSection() }
         item { Section(stringResource(R.string.s_interface)) }
         item {
             Choice(
