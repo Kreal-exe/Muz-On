@@ -77,6 +77,8 @@ import dev.kreal.muzon.data.AppTheme
 import dev.kreal.muzon.data.Library
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
+import androidx.compose.foundation.gestures.animateScrollBy
+import kotlinx.coroutines.flow.first
 
 private val audioPermission = if (Build.VERSION.SDK_INT >= 33) Manifest.permission.READ_MEDIA_AUDIO else Manifest.permission.READ_EXTERNAL_STORAGE
 
@@ -574,24 +576,39 @@ fun rememberFolderPicker(vm: AppViewModel): androidx.activity.compose.ManagedAct
 @Composable
 private fun TabPager(vm: AppViewModel, holder: androidx.compose.runtime.saveable.SaveableStateHolder, modifier: Modifier, content: @Composable (Route) -> Unit) {
     val tabs = vm.tabs()
+    val currentTabs by androidx.compose.runtime.rememberUpdatedState(tabs)
     val pager = androidx.compose.foundation.pager.rememberPagerState(initialPage = tabs.indexOf(vm.nav.tab).coerceAtLeast(0)) { tabs.size }
-    LaunchedEffect(vm.nav.tab, tabs) {
-        val target = tabs.indexOf(vm.nav.tab)
-        if (target < 0 || pager.currentPage == target || pager.isScrollInProgress) return@LaunchedEffect
-        // One quick run across every tab in between, the farther the slightly longer.
-        val pages = kotlin.math.abs(pager.currentPage - target)
-        pager.animateScrollToPage(
-            target,
-            animationSpec = androidx.compose.animation.core.tween(220 + 70 * pages, easing = androidx.compose.animation.core.FastOutSlowInEasing),
-        )
+    // Only a finger's swipe changes the tab from here; a tap's run or a reorder of the tabs must not.
+    var swiped by remember { mutableStateOf(false) }
+    LaunchedEffect(pager) {
+        pager.interactionSource.interactions.collect { if (it is androidx.compose.foundation.interaction.DragInteraction.Start) swiped = true }
     }
-    LaunchedEffect(pager, tabs) {
-        androidx.compose.runtime.snapshotFlow { pager.settledPage }.collect { page -> tabs.getOrNull(page)?.let { vm.nav.showTab(it) } }
+    LaunchedEffect(vm.nav.tab) {
+        swiped = false
+        // Wait for a fling still under way instead of dropping the tap.
+        androidx.compose.runtime.snapshotFlow { pager.isScrollInProgress }.first { !it }
+        val target = currentTabs.indexOf(vm.nav.tab)
+        if (target < 0 || (pager.currentPage == target && pager.currentPageOffsetFraction == 0f)) return@LaunchedEffect
+        // One quick run across every tab in between, driven as one distance: the pager's own
+        // animation would jump over all but the last three pages.
+        val pages = kotlin.math.abs(pager.currentPage - target)
+        val distance = ((target - pager.currentPage) - pager.currentPageOffsetFraction) * (pager.layoutInfo.pageSize + pager.layoutInfo.pageSpacing)
+        pager.animateScrollBy(distance, androidx.compose.animation.core.tween(220 + 70 * pages, easing = androidx.compose.animation.core.FastOutSlowInEasing))
+        pager.scrollToPage(target)
+    }
+    LaunchedEffect(pager) {
+        androidx.compose.runtime.snapshotFlow { pager.settledPage }.collect { page ->
+            if (swiped) {
+                swiped = false
+                currentTabs.getOrNull(page)?.let { vm.nav.showTab(it) }
+            }
+        }
     }
     androidx.compose.foundation.pager.HorizontalPager(
         state = pager,
         modifier = modifier.fillMaxSize(),
-        beyondViewportPageCount = 0,
+        // The neighbours stay built, so a swipe or a run does not build a whole list on its first frame.
+        beyondViewportPageCount = 1,
         key = { tabs[it].name },
     ) { page ->
         StackHost(vm.nav, holder, tab = tabs[page], content = content)
