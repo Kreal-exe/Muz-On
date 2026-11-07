@@ -1,6 +1,7 @@
 package dev.kreal.muzon
 
 import android.content.res.Configuration
+import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -27,8 +28,13 @@ class MainActivity : ComponentActivity() {
         val best = display.supportedModes
             .filter { it.physicalWidth == current.physicalWidth && it.physicalHeight == current.physicalHeight }
             .maxByOrNull { it.refreshRate } ?: return
-        if (window.attributes.preferredDisplayModeId != best.modeId) {
-            window.attributes = window.attributes.apply { preferredDisplayModeId = best.modeId }
+        val attributes = window.attributes
+        attributes.preferredDisplayModeId = best.modeId
+        attributes.preferredRefreshRate = best.refreshRate
+        window.attributes = attributes
+        if (Build.VERSION.SDK_INT >= 35) {
+            // Otherwise the phone drops to 60 Hz as soon as a finger lifts.
+            window.isFrameRatePowerSavingsBalanced = false
         }
     }
 }

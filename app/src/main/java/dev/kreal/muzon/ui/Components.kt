@@ -139,7 +139,7 @@ fun TrackRow(track: Track, isCurrent: Boolean, wantsToPlay: Boolean, number: Int
             Spacer(Modifier.width(11.dp))
         }
         Column(Modifier.weight(1f)) {
-            Txt(track.title.trim(), if (isCurrent) Type.bodyBold else Type.body, if (!available) p.muted else if (isCurrent) p.accent else p.text)
+            Txt(track.title.trim(), if (isCurrent) Type.bodyBold else Type.body, if (!available) p.muted else if (isCurrent) p.accent else p.text, maxLines = 3)
             Txt(track.artist.ifBlank { track.shownArtist }, Type.small, p.muted)
         }
         if (isCurrent) {

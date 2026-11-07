@@ -73,8 +73,12 @@
     <string name="size_medium">Orta</string>
     <string name="size_large">Büyük</string>
     <string name="s_keep_screen">Sözlerde ekran açık kalsın</string>
-    <string name="up_next">Sıradaki</string>
     <string name="s_lyric_popup">Mini oynatıcının üstünde geçerli satır</string>
+    <string name="no_db_title">Bu klasörde Mac arşivi yok</string>
+    <string name="s_online_art">Eksik kapakları internette ara</string>
+    <string name="s_online_art_hint">Görseli olmayan parçaların sanatçı ve adını Deezer ve iTunes’a gönderir</string>
+    <string name="s_lyrics_lead">Satırı önceden göster</string>
+    <string name="seconds_short">%1$.2f sn</string>
     <string name="s_about">Hakkında</string>
     <string name="s_privacy">Gizlilik</string>
     <plurals name="songs">

@@ -23,7 +23,7 @@ import dev.kreal.muzon.data.Prefs
 import dev.kreal.muzon.data.Track
 
 /** The UI's view of the player. Every field follows the player's own events, never a guess. */
-class PlayerConnection(private val context: Context, private val prefs: Prefs) {
+class PlayerConnection(private val context: Context, private val prefs: Prefs, private val localPlayer: () -> Player?) {
     private var controller: MediaController? = null
     private var connecting = false
     private val main = Handler(Looper.getMainLooper())
@@ -55,7 +55,8 @@ class PlayerConnection(private val context: Context, private val prefs: Prefs) {
 
     val playOrderPosition: Int get() = playOrder.indexOf(windowIndex).coerceAtLeast(0)
 
-    val positionMs: Long get() = controller?.currentPosition ?: 0L
+    /** Read from the player itself: a controller only estimates between updates from the session. */
+    val positionMs: Long get() = localPlayer()?.currentPosition ?: controller?.currentPosition ?: 0L
 
     private val listener = object : Player.Listener {
         override fun onEvents(player: Player, events: Player.Events) {

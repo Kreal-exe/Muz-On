@@ -73,8 +73,12 @@
     <string name="size_medium">Mittel</string>
     <string name="size_large">Groß</string>
     <string name="s_keep_screen">Bildschirm bei Liedtext anlassen</string>
-    <string name="up_next">Als Nächstes</string>
     <string name="s_lyric_popup">Aktuelle Zeile über dem Miniplayer</string>
+    <string name="no_db_title">Keine Mac-Mediathek in diesem Ordner</string>
+    <string name="s_online_art">Fehlende Cover online suchen</string>
+    <string name="s_online_art_hint">Sendet Künstler und Titel von Tracks ohne Bild an Deezer und iTunes</string>
+    <string name="s_lyrics_lead">Zeile früher anzeigen</string>
+    <string name="seconds_short">%1$.2f s</string>
     <string name="s_about">Über</string>
     <string name="s_privacy">Datenschutz</string>
     <plurals name="songs">

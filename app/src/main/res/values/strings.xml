@@ -74,8 +74,12 @@
     <string name="size_medium">Medium</string>
     <string name="size_large">Large</string>
     <string name="s_keep_screen">Keep screen on with lyrics</string>
-    <string name="up_next">Up next</string>
     <string name="s_lyric_popup">Current line over the mini player</string>
+    <string name="no_db_title">No Mac library in this folder</string>
+    <string name="s_online_art">Find missing covers online</string>
+    <string name="s_online_art_hint">Sends the artist and title of tracks without a picture to Deezer and iTunes</string>
+    <string name="s_lyrics_lead">Show lines ahead by</string>
+    <string name="seconds_short">%1$.2f s</string>
     <string name="s_about">About</string>
     <string name="s_privacy">Privacy policy</string>
     <plurals name="songs">

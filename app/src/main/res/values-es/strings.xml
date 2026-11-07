@@ -73,8 +73,12 @@
     <string name="size_medium">Medio</string>
     <string name="size_large">Grande</string>
     <string name="s_keep_screen">Pantalla encendida con letra</string>
-    <string name="up_next">A continuación</string>
     <string name="s_lyric_popup">Línea actual sobre el minirreproductor</string>
+    <string name="no_db_title">No hay biblioteca del Mac en esta carpeta</string>
+    <string name="s_online_art">Buscar portadas que faltan en línea</string>
+    <string name="s_online_art_hint">Envía el artista y el título de las canciones sin imagen a Deezer e iTunes</string>
+    <string name="s_lyrics_lead">Mostrar la línea antes</string>
+    <string name="seconds_short">%1$.2f s</string>
     <string name="s_about">Acerca de</string>
     <string name="s_privacy">Privacidad</string>
     <plurals name="songs">

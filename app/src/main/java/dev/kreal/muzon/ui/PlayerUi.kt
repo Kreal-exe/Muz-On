@@ -33,7 +33,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.pager.HorizontalPager
@@ -65,7 +64,9 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.FrameRateCategory
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.preferredFrameRate
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.CornerRadius
@@ -114,7 +115,7 @@ import kotlinx.coroutines.withContext
 import kotlin.math.abs
 import kotlin.math.min
 
-private val sheetSpring = spring<Float>(dampingRatio = 1f, stiffness = 340f)
+private val sheetSpring = spring<Float>(dampingRatio = 1f, stiffness = 230f)
 
 /** Saturated flat colour of a track's cover, kept dark enough for its text to read. */
 @Composable
@@ -158,7 +159,7 @@ private fun rememberPosition(conn: PlayerConnection): Position {
     LaunchedEffect(conn, id, conn.wantsToPlay) {
         position.value.longValue = conn.positionMs
         while (conn.wantsToPlay) {
-            delay(200)
+            delay(80)
             position.value.longValue = conn.positionMs
         }
         delay(250)
@@ -185,6 +186,12 @@ private fun ArtPager(conn: PlayerConnection, modifier: Modifier, swipeEnabled: (
         snapshotFlow { pager.settledPage }.distinctUntilChanged().collect { page ->
             val window = order.getOrNull(page)
             if (window != null && page != conn.playOrderPosition) conn.seekToWindow(window)
+        }
+    }
+    // A resize or an interrupted swipe must not leave the artwork resting between two pages.
+    LaunchedEffect(pager) {
+        snapshotFlow { pager.isScrollInProgress to pager.currentPageOffsetFraction }.collect { (moving, offset) ->
+            if (!moving && offset != 0f) pager.scrollToPage(pager.currentPage)
         }
     }
     val canSwipe by remember { derivedStateOf(swipeEnabled) }
@@ -365,16 +372,16 @@ private fun LyricsPanel(vm: AppViewModel, position: Position, on: Color, modifie
         when {
             current == null -> Unit
             current.isEmpty -> Txt(stringResource(R.string.no_lyrics), Type.body, on.copy(alpha = 0.7f), Modifier.align(Alignment.Center))
-            else -> LyricsList(current, position, conn, on, style)
+            else -> LyricsList(current, position, conn, on, style, vm.prefs.lyricsLeadMs)
         }
     }
 }
 
 @Composable
-private fun LyricsList(lyrics: Lyrics, position: Position, conn: PlayerConnection, on: Color, style: androidx.compose.ui.text.TextStyle) {
+private fun LyricsList(lyrics: Lyrics, position: Position, conn: PlayerConnection, on: Color, style: androidx.compose.ui.text.TextStyle, leadMs: Int) {
     val state = rememberLazyListState()
     val timed = lyrics.timed
-    val active by remember(timed) { derivedStateOf { activeLine(timed, position.value.longValue) } }
+    val active by remember(timed, leadMs) { derivedStateOf { activeLine(timed, position.value.longValue + leadMs) } }
     var lastTouch by remember { mutableLongStateOf(0L) }
     LaunchedEffect(active) {
         if (active >= 0 && System.currentTimeMillis() - lastTouch > 3000) {
@@ -412,7 +419,7 @@ private fun LyricsList(lyrics: Lyrics, position: Position, conn: PlayerConnectio
 
 @Composable
 private fun LyricRow(line: LyricLine, active: Boolean, on: Color, style: androidx.compose.ui.text.TextStyle, onTap: () -> Unit) {
-    val alpha by animateFloatAsState(if (active) 1f else 0.42f, tween(220), label = "line")
+    val alpha by animateFloatAsState(if (active) 1f else 0.42f, tween(120), label = "line")
     androidx.compose.material3.Text(
         line.text,
         style = style,
@@ -426,25 +433,43 @@ private fun LyricRow(line: LyricLine, active: Boolean, on: Color, style: android
     )
 }
 
+/**
+ * The whole queue in play order: what played, the current track marked, what comes next. The list
+ * follows the current track and keeps one finished track above it in view.
+ */
 @Composable
 private fun QueuePanel(conn: PlayerConnection, on: Color, modifier: Modifier = Modifier) {
     val order = conn.playOrder
     val queue = conn.queue
-    val state = rememberLazyListState(initialFirstVisibleItemIndex = conn.playOrderPosition)
-    LazyColumn(state = state, modifier = modifier.fillMaxWidth(), contentPadding = PaddingValues(vertical = 8.dp)) {
-        itemsIndexed(order, key = { i, w -> "$i:$w" }, contentType = { _, _ -> 0 }) { _, window ->
+    val position = conn.playOrderPosition
+    val systemBottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
+    val state = rememberLazyListState(initialFirstVisibleItemIndex = (position - 1).coerceAtLeast(0))
+    LaunchedEffect(position, order) {
+        val target = (position - 1).coerceAtLeast(0)
+        if (abs(state.firstVisibleItemIndex - target) > 12) state.scrollToItem(target) else state.animateScrollToItem(target)
+    }
+    LazyColumn(state = state, modifier = modifier.fillMaxWidth(), contentPadding = PaddingValues(top = 2.dp, bottom = systemBottom + 6.dp)) {
+        itemsIndexed(order, key = { _, window -> window }, contentType = { _, _ -> 0 }) { index, window ->
             val track = queue.getOrNull(window) ?: return@itemsIndexed
-            val isCurrent = window == conn.windowIndex
+            val isCurrent = index == position
+            val played = index < position
             Row(
-                Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp)).clickable { conn.seekToWindow(window) }.padding(vertical = 5.dp),
+                Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(10.dp))
+                    .then(if (isCurrent) Modifier.background(on.copy(alpha = 0.16f)) else Modifier)
+                    .clickable { conn.seekToWindow(window) }
+                    .padding(horizontal = 6.dp, vertical = 4.dp)
+                    .graphicsLayer { alpha = if (played) 0.55f else 1f },
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 TrackArt(track, Modifier.size(40.dp), Radius6)
                 Spacer(Modifier.width(10.dp))
                 Column(Modifier.weight(1f)) {
-                    Txt(track.title.trim(), if (isCurrent) Type.bodyBold else Type.body, on)
+                    Txt(track.title.trim(), if (isCurrent) Type.bodyBold else Type.body, on, maxLines = 3)
                     Txt(track.artist, Type.small, on.copy(alpha = 0.7f))
                 }
+                Spacer(Modifier.width(6.dp))
                 Txt(formatTime(track.durationMs), Type.tiny, on.copy(alpha = 0.7f))
             }
         }
@@ -498,7 +523,8 @@ fun CompactPlayer(vm: AppViewModel, tabsHeight: Dp, modifier: Modifier = Modifie
         fun settleTo(target: Float, velocity: Float = 0f) {
             settle?.cancel()
             settle = scope.launch {
-                animate(vm.sheet, target, velocity, sheetSpring) { v, _ -> vm.sheet = v.coerceIn(0f, 1f) }
+                // A hard flick should not cross the screen in a few frames.
+                animate(vm.sheet, target, velocity.coerceIn(-2.5f, 2.5f), sheetSpring) { v, _ -> vm.sheet = v.coerceIn(0f, 1f) }
             }
         }
         val dragState = rememberDraggableState { delta -> vm.sheet = (vm.sheet - delta / g.miniTop).coerceIn(0f, 1f) }
@@ -530,9 +556,12 @@ fun CompactPlayer(vm: AppViewModel, tabsHeight: Dp, modifier: Modifier = Modifie
             }
         }
 
+        // The page behind dims as the player rises, which gives the sheet its depth.
+        Box(Modifier.fillMaxSize().drawBehind { if (vm.sheet > 0f) drawRect(Color.Black.copy(alpha = 0.6f * vm.sheet)) })
         Box(
             Modifier
                 .fillMaxSize()
+                .preferredFrameRate(FrameRateCategory.High)
                 .graphicsLayer {
                     translationY = (1f - vm.sheet) * g.miniTop
                 }
@@ -543,7 +572,7 @@ fun CompactPlayer(vm: AppViewModel, tabsHeight: Dp, modifier: Modifier = Modifie
                         cover.fill.value,
                         Offset(inset, 0f),
                         Size(size.width - inset * 2, lerp(g.miniHeight, size.height, f)),
-                        CornerRadius(lerp(14.dp.toPx(), 0f, f)),
+                        CornerRadius(if (f < 0.9f) lerp(14.dp.toPx(), 28.dp.toPx(), f / 0.9f) else lerp(28.dp.toPx(), 0f, (f - 0.9f) / 0.1f)),
                     )
                 }
                 .draggable(
@@ -613,12 +642,14 @@ fun CompactPlayer(vm: AppViewModel, tabsHeight: Dp, modifier: Modifier = Modifie
 
         if (vm.prefs.lyricPopup) {
             LyricPopup(
+                vm.prefs.lyricsLeadMs,
                 lyrics,
                 position,
                 cover.fill,
                 onCover,
                 Modifier
-                    .padding(start = 14.dp, end = 14.dp, top = with(density) { g.miniTop.toDp() } - 40.dp)
+                    .fillMaxWidth()
+                    .height(with(density) { g.miniTop.toDp() } - 6.dp)
                     .graphicsLayer {
                         alpha = (1f - vm.sheet / 0.12f).coerceIn(0f, 1f)
                         translationY = if (vm.sheet < 0.12f) 0f else -100000f
@@ -634,6 +665,7 @@ fun CompactPlayer(vm: AppViewModel, tabsHeight: Dp, modifier: Modifier = Modifie
 /** The current line, floating over the mini player. Absent when the track has no timed lyrics. */
 @Composable
 private fun LyricPopup(
+    leadMs: Int,
     lyrics: Lyrics?,
     position: Position,
     fill: androidx.compose.runtime.State<Color>,
@@ -642,17 +674,20 @@ private fun LyricPopup(
     onClick: () -> Unit,
 ) {
     val timed = lyrics?.timed.orEmpty()
-    val line by remember(timed) { derivedStateOf { timed.getOrNull(activeLine(timed, position.value.longValue))?.text } }
+    val line by remember(timed, leadMs) { derivedStateOf { timed.getOrNull(activeLine(timed, position.value.longValue + leadMs))?.text } }
     val shown = line ?: return
-    Box(
-        modifier
-            .clip(RoundedCornerShape(12.dp))
-            .drawBehind { drawRect(fill.value) }
-            .clickable(onClick = onClick)
-            .padding(horizontal = 12.dp, vertical = 6.dp),
-    ) {
-        androidx.compose.animation.Crossfade(shown, animationSpec = tween(180), label = "line") { text ->
-            Txt(text, Type.small.copy(fontWeight = androidx.compose.ui.text.font.FontWeight(600)), on)
+    // Anchored at the bottom: a long line grows upward, away from the mini player.
+    Box(modifier.padding(horizontal = 14.dp), contentAlignment = Alignment.BottomStart) {
+        Box(
+            Modifier
+                .clip(RoundedCornerShape(12.dp))
+                .drawBehind { drawRect(fill.value) }
+                .clickable(onClick = onClick)
+                .padding(horizontal = 12.dp, vertical = 6.dp),
+        ) {
+            androidx.compose.animation.Crossfade(shown, animationSpec = tween(180), label = "line") { text ->
+                Txt(text, Type.small.copy(fontWeight = androidx.compose.ui.text.font.FontWeight(600)), on, maxLines = 4)
+            }
         }
     }
 }
@@ -754,7 +789,7 @@ private fun FullPageBody(
                 Controls(conn, onCover, cover, big = 62.dp)
                 PanelToggles(vm, onCover)
             }
-            UpNext(
+            QueuePanel(
                 conn,
                 onCover,
                 Modifier
@@ -774,39 +809,6 @@ private fun FullPageBody(
                     .graphicsLayer { alpha = panelState.floatValue },
             ) {
                 if (panel == PlayerPanel.Lyrics) LyricsPanel(vm, position, onCover, Modifier.fillMaxSize()) else QueuePanel(conn, onCover, Modifier.fillMaxSize())
-            }
-        }
-    }
-}
-
-/** What plays next, in play order, under the controls. */
-@Composable
-private fun UpNext(conn: PlayerConnection, on: Color, modifier: Modifier) {
-    val order = conn.playOrder
-    val queue = conn.queue
-    val start = conn.playOrderPosition + 1
-    val next = remember(order, start) { if (start < order.size) order.subList(start, order.size) else emptyList() }
-    val systemBottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
-    LazyColumn(modifier.fillMaxWidth(), contentPadding = PaddingValues(bottom = systemBottom + 6.dp)) {
-        if (next.isNotEmpty()) {
-            item(key = "head", contentType = "head") {
-                Txt(stringResource(R.string.up_next), Type.tile, on.copy(alpha = 0.8f), Modifier.padding(top = 2.dp, bottom = 5.dp))
-            }
-        }
-        items(next, key = { it }, contentType = { "row" }) { window ->
-            val track = queue.getOrNull(window) ?: return@items
-            Row(
-                Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp)).clickable { conn.seekToWindow(window) }.padding(vertical = 4.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                TrackArt(track, Modifier.size(38.dp), Radius6)
-                Spacer(Modifier.width(10.dp))
-                Column(Modifier.weight(1f)) {
-                    Txt(track.title.trim(), Type.body, on)
-                    Txt(track.artist, Type.small, on.copy(alpha = 0.7f))
-                }
-                Spacer(Modifier.width(6.dp))
-                Txt(formatTime(track.durationMs), Type.tiny, on.copy(alpha = 0.7f))
             }
         }
     }

@@ -73,8 +73,12 @@
     <string name="size_medium">Middel</string>
     <string name="size_large">Groot</string>
     <string name="s_keep_screen">Scherm aan bij songtekst</string>
-    <string name="up_next">Hierna</string>
     <string name="s_lyric_popup">Huidige regel boven de minispeler</string>
+    <string name="no_db_title">Geen Mac-bibliotheek in deze map</string>
+    <string name="s_online_art">Ontbrekende hoezen online zoeken</string>
+    <string name="s_online_art_hint">Stuurt artiest en titel van nummers zonder afbeelding naar Deezer en iTunes</string>
+    <string name="s_lyrics_lead">Regel eerder tonen</string>
+    <string name="seconds_short">%1$.2f s</string>
     <string name="s_about">Over</string>
     <string name="s_privacy">Privacy</string>
     <plurals name="songs">

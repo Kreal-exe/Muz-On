@@ -27,6 +27,7 @@ import coil.key.Keyer
 import coil.request.ImageRequest
 import coil.request.Options
 import dev.kreal.muzon.MuzOnApp
+import dev.kreal.muzon.data.OnlineArt
 import dev.kreal.muzon.data.Track
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -49,11 +50,11 @@ class ArtFetcher(private val key: ArtKey, private val app: MuzOnApp) : Fetcher {
         val dir = File(app.cacheDir, "art").apply { mkdirs() }
         val file = File(dir, "${key.trackId}_${if (key.large) "l" else "s"}.jpg")
         if (!file.exists() || file.length() == 0L) {
-            val empty = File(dir, "${key.trackId}.none")
+            val empty = File(dir, "${key.trackId}.noart")
             if (empty.exists()) return@withContext null
-            val bytes = embedded(key.uri) ?: borrow()
+            val bytes = embedded(key.uri) ?: borrow() ?: online(dir)
             if (bytes == null) {
-                empty.createNewFile()
+                if (online == OnlineArt.Outcome.NotFound) empty.createNewFile()
                 return@withContext null
             }
             val bitmap = decode(bytes, if (key.large) 1080 else 320) ?: return@withContext null
@@ -63,6 +64,22 @@ class ArtFetcher(private val key: ArtKey, private val app: MuzOnApp) : Fetcher {
             temp.renameTo(file)
         }
         SourceResult(ImageSource(file.toOkioPath(), okio.FileSystem.SYSTEM), "image/jpeg", DataSource.DISK)
+    }
+
+    private var online: OnlineArt.Outcome? = OnlineArt.Outcome.NotFound
+
+    /** Last resort, and only if the setting is on. The answer is kept: the phone asks once per track. */
+    private suspend fun online(dir: File): ByteArray? {
+        if (!app.prefs.onlineArt) {
+            online = null // says nothing about the track; it may be looked up once the setting is on
+            return null
+        }
+        val saved = File(dir, "${key.trackId}.web")
+        if (saved.exists()) return saved.readBytes()
+        val track = app.repository.library.value?.byId?.get(key.trackId) ?: return null
+        val outcome = withContext(Art.web) { OnlineArt.find(track.shownArtist, track.title) }
+        online = outcome
+        return (outcome as? OnlineArt.Outcome.Found)?.bytes?.also { saved.writeBytes(it) }
     }
 
     private fun borrow(): ByteArray? {
@@ -103,6 +120,7 @@ class ArtFetcher(private val key: ArtKey, private val app: MuzOnApp) : Fetcher {
 
 object Art {
     val io = Dispatchers.IO.limitedParallelism(4)
+    val web = Dispatchers.IO.limitedParallelism(3)
 
     fun key(track: Track, large: Boolean) =
         track.uri?.let { ArtKey(track.id, it, track.albumKey, large) }
