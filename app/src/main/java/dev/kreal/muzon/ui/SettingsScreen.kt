@@ -30,6 +30,8 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowLeft
 import androidx.compose.material.icons.rounded.Check
+import androidx.compose.material.icons.rounded.KeyboardArrowDown
+import androidx.compose.material.icons.rounded.KeyboardArrowUp
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
@@ -56,6 +58,13 @@ import dev.kreal.muzon.data.ColorMode
 import dev.kreal.muzon.data.Library
 import dev.kreal.muzon.data.LibrarySource
 import dev.kreal.muzon.data.LyricsSize
+import dev.kreal.muzon.data.Place
+import androidx.lifecycle.viewModelScope
+import coil.imageLoader
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import java.io.File
 
 private val LANGUAGES = listOf(
     "en" to "English", "ru" to "Русский", "uk" to "Українська", "de" to "Deutsch", "fr" to "Français",
@@ -89,17 +98,90 @@ private fun Row_(title: String, value: String? = null, onClick: (() -> Unit)? = 
 }
 
 @Composable
+private fun switchColors() = LocalPalette.current.let { p ->
+    SwitchDefaults.colors(
+        checkedTrackColor = p.accent, checkedThumbColor = Color.White,
+        uncheckedTrackColor = p.surfaceHigh, uncheckedThumbColor = p.muted, uncheckedBorderColor = Color.Transparent,
+        disabledCheckedTrackColor = p.accent.copy(alpha = 0.45f), disabledCheckedThumbColor = Color.White,
+    )
+}
+
+@Composable
 private fun Toggle(title: String, value: String?, checked: Boolean, onChange: (Boolean) -> Unit) {
-    val p = LocalPalette.current
     Row_(title, value, { onChange(!checked) }) {
-        Switch(
-            checked, onChange,
-            colors = SwitchDefaults.colors(
-                checkedTrackColor = p.accent, checkedThumbColor = Color.White,
-                uncheckedTrackColor = p.surfaceHigh, uncheckedThumbColor = p.muted, uncheckedBorderColor = Color.Transparent,
-            ),
-        )
+        Switch(checked, onChange, colors = switchColors())
     }
+}
+
+/** A tab with arrows that move it among the others and a switch that shows it; Home always shows. */
+@Composable
+private fun TabSetting(vm: AppViewModel, tab: Tab, index: Int, order: List<Tab>) {
+    val p = LocalPalette.current
+    val prefs = vm.prefs
+    val shown = tab == Tab.Home || tab.name !in prefs.hiddenTabs
+    fun move(by: Int) {
+        val list = order.toMutableList()
+        list.add(index + by, list.removeAt(index))
+        prefs.updateTabOrder(list.map { it.name })
+    }
+    Row_(tabLabel(tab), null, if (tab == Tab.Home) null else { { prefs.setTabHidden(tab.name, shown) } }) {
+        val canUp = index > 0
+        val canDown = index < order.lastIndex
+        IconTap(Icons.Rounded.KeyboardArrowUp, if (canUp) p.text else p.muted.copy(alpha = 0.35f), label = stringResource(R.string.move_up)) { if (canUp) move(-1) }
+        IconTap(Icons.Rounded.KeyboardArrowDown, if (canDown) p.text else p.muted.copy(alpha = 0.35f), label = stringResource(R.string.move_down)) { if (canDown) move(1) }
+        Spacer(Modifier.width(6.dp))
+        Switch(shown, { prefs.setTabHidden(tab.name, !it) }, enabled = tab != Tab.Home, colors = switchColors())
+    }
+}
+
+@Composable
+private fun tabLabel(tab: Tab) = stringResource(
+    when (tab) {
+        Tab.Home -> R.string.home
+        Tab.Playlists -> R.string.place_playlists
+        Tab.Artists -> R.string.place_artists
+        Tab.Albums -> R.string.place_albums
+        Tab.Songs -> R.string.place_songs
+    },
+)
+
+/** A row that asks before doing what cannot be undone. */
+@Composable
+private fun ConfirmRow(title: String, value: String?, question: String, confirm: String, action: () -> Unit) {
+    var asking by remember { mutableStateOf(false) }
+    Row_(title, value, { asking = true })
+    if (asking) {
+        ConfirmDialog(title, question, confirm, { asking = false }) {
+            asking = false
+            action()
+        }
+    }
+}
+
+/**
+ * Removes the pictures OnlineArt found, with the small copies made from them, and forgets which
+ * tracks it found nothing for, so each is looked up again. Returns the bytes freed.
+ */
+private fun clearOnlineCovers(context: android.content.Context): Long {
+    val dir = File(context.cacheDir, "art")
+    var freed = 0L
+    fun drop(f: File) {
+        if (!f.exists()) return
+        val size = f.length()
+        if (f.delete()) freed += size
+    }
+    dir.listFiles()?.forEach { f ->
+        when {
+            f.name.endsWith(".web") -> {
+                val id = f.name.removeSuffix(".web")
+                drop(f)
+                drop(File(dir, "${id}_s.jpg"))
+                drop(File(dir, "${id}_l.jpg"))
+            }
+            f.name.endsWith(".noart2") -> drop(f)
+        }
+    }
+    return freed
 }
 
 @Composable
@@ -213,10 +295,42 @@ fun SettingsScreen(vm: AppViewModel, library: Library) {
         }
 
         item { Section(stringResource(R.string.s_interface)) }
+        item {
+            Choice(
+                stringResource(R.string.s_start), prefs.startOnLastTab, listOf(false, true),
+                { stringResource(if (it) R.string.start_last else R.string.home) },
+            ) { prefs.startOnLastTab = it }
+        }
         item { Toggle(stringResource(R.string.s_tab_labels), null, prefs.tabLabels) { prefs.tabLabels = it } }
+        item {
+            Choice(
+                stringResource(R.string.s_album_columns), prefs.albumColumns, listOf(0, 2, 3, 4, 5),
+                { if (it == 0) stringResource(R.string.columns_auto) else it.toString() },
+            ) { prefs.albumColumns = it }
+        }
         item { Toggle(stringResource(R.string.s_queue_numbers), null, prefs.queueNumbers) { prefs.queueNumbers = it } }
         item { Toggle(stringResource(R.string.s_swipe_art), null, prefs.swipeArtwork) { prefs.swipeArtwork = it } }
         item { Toggle(stringResource(R.string.s_haptics), null, prefs.haptics) { prefs.haptics = it } }
+
+        item { Section(stringResource(R.string.s_tabs)) }
+        val tabOrder = orderedTabs(prefs.tabOrder)
+        tabOrder.forEachIndexed { i, tab ->
+            item(key = "tab:${tab.name}") {
+                Box(Modifier.animateItem()) { TabSetting(vm, tab, i, tabOrder) }
+            }
+        }
+
+        item { Section(stringResource(R.string.s_home_screen)) }
+        Place.entries.forEach { place ->
+            item(key = "place:${place.name}") {
+                val places = prefs.places
+                // At least one place stays, as on Home itself.
+                Toggle(place.label(), null, place in places) { on ->
+                    if (on) prefs.updatePlaces(places + place) else if (places.size > 1) prefs.updatePlaces(places - place)
+                }
+            }
+        }
+        item { Row_(stringResource(R.string.s_home_reset), null, { prefs.resetHome() }) }
 
         if (Build.VERSION.SDK_INT >= 33) {
             item { Section(stringResource(R.string.s_language)) }
@@ -254,6 +368,17 @@ fun SettingsScreen(vm: AppViewModel, library: Library) {
             Row_(stringResource(R.string.s_folder), folder ?: stringResource(R.string.folder_none), { folderPicker.launch(musicFolderUri()) })
         }
         item { Row_(stringResource(R.string.s_update), null, { vm.refreshLibrary(force = true) }) }
+        item {
+            val off = stringResource(R.string.sleep_off)
+            Choice(stringResource(R.string.s_min_length), prefs.minTrackSeconds, listOf(0, 10, 30, 60), { if (it == 0) off else stringResource(R.string.seconds_whole, it) }) {
+                if (it == prefs.minTrackSeconds) return@Choice
+                prefs.minTrackSeconds = it
+                vm.viewModelScope.launch {
+                    vm.repository.reapplyFilters()
+                    vm.repository.library.value?.let(vm.connection::onLibrary)
+                }
+            }
+        }
 
         item { Toggle(stringResource(R.string.s_online_art), stringResource(R.string.s_online_art_hint), prefs.onlineArt) { prefs.onlineArt = it } }
 
@@ -262,6 +387,7 @@ fun SettingsScreen(vm: AppViewModel, library: Library) {
         item { Toggle(stringResource(R.string.s_auto_skip), null, prefs.autoSkip) { prefs.autoSkip = it } }
         item { Toggle(stringResource(R.string.s_keep_playing), null, prefs.keepPlayingWhenRemoved) { prefs.keepPlayingWhenRemoved = it } }
         item { Toggle(stringResource(R.string.s_pause_interrupt), stringResource(R.string.s_pause_interrupt_hint), prefs.pauseOnInterrupt) { prefs.pauseOnInterrupt = it } }
+        item { Toggle(stringResource(R.string.s_resume_connect), stringResource(R.string.s_resume_connect_hint), prefs.resumeOnConnect) { prefs.resumeOnConnect = it } }
         item {
             Choice(stringResource(R.string.s_recent), prefs.recentDays, listOf(0, 7, 30, 90, 365), { if (it == 0) stringResource(R.string.recent_newest) else stringResource(R.string.recent_days, it) }) {
                 prefs.recentDays = it
@@ -330,6 +456,29 @@ fun SettingsScreen(vm: AppViewModel, library: Library) {
         item { Toggle(stringResource(R.string.s_cover_lyrics), null, prefs.coverLyrics) { prefs.coverLyrics = it } }
         item { Toggle(stringResource(R.string.s_keep_screen), null, prefs.keepScreenForLyrics) { prefs.keepScreenForLyrics = it } }
         item { Toggle(stringResource(R.string.s_lyric_popup), null, prefs.lyricPopup) { prefs.lyricPopup = it } }
+
+        item { Section(stringResource(R.string.s_data)) }
+        item {
+            val title = stringResource(R.string.s_clear_history)
+            ConfirmRow(title, null, stringResource(R.string.s_clear_history_confirm), stringResource(R.string.clear)) { prefs.clearHistory() }
+        }
+        item {
+            val title = stringResource(R.string.s_reset_plays)
+            val hint = stringResource(R.string.s_reset_plays_hint)
+            ConfirmRow(title, hint, hint, stringResource(R.string.reset)) { prefs.resetLocalPlays() }
+        }
+        item {
+            var freed by remember { mutableStateOf<Long?>(null) }
+            val title = stringResource(R.string.s_clear_covers)
+            val hint = freed?.let { stringResource(R.string.covers_cleared, android.text.format.Formatter.formatShortFileSize(context, it)) }
+                ?: stringResource(R.string.s_clear_covers_hint)
+            ConfirmRow(title, hint, stringResource(R.string.s_clear_covers_hint), stringResource(R.string.clear)) {
+                vm.viewModelScope.launch {
+                    freed = withContext(Dispatchers.IO) { clearOnlineCovers(context.applicationContext) }
+                    context.imageLoader.memoryCache?.clear()
+                }
+            }
+        }
 
         item { Section(stringResource(R.string.s_about)) }
         item { Row_(stringResource(R.string.app_name), BuildConfig.VERSION_NAME) }

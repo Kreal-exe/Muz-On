@@ -132,6 +132,47 @@ class Prefs(context: Context) {
         sp.edit().putString("tabs", order.joinToString(",")).apply()
     }
 
+    /** Tabs left out of the bar; Home is never among them. */
+    var hiddenTabs: Set<String> by mutableStateOf(
+        sp.getString("hiddenTabs", null)?.split(',')?.filter { it.isNotEmpty() && it != "Home" }?.toSet().orEmpty(),
+    )
+        private set
+
+    fun setTabHidden(name: String, hidden: Boolean) {
+        if (name == "Home") return
+        hiddenTabs = if (hidden) hiddenTabs + name else hiddenTabs - name
+        sp.edit().putString("hiddenTabs", hiddenTabs.joinToString(",")).apply()
+    }
+
+    private val startLastState = flag("startLast", false)
+    /** Open on the tab used last instead of Home. */
+    var startOnLastTab: Boolean get() = startLastState.value; set(v) { startLastState.value = v; put("startLast", v) }
+
+    var lastTab: String?
+        get() = sp.getString("lastTab", null)
+        set(v) { sp.edit().putString("lastTab", v).apply() }
+
+    /** Puts Home back as it came: the first places, each half width. */
+    fun resetHome() {
+        updatePlaces(placesDefault)
+        val edit = sp.edit()
+        Place.entries.forEach { edit.remove("tile_${it.name}") }
+        edit.apply()
+        tileSizes.clear()
+    }
+
+    private val resumeOnConnectState = flag("resumeOnConnect", false)
+    /** Play on when wired or Bluetooth headphones are connected. */
+    var resumeOnConnect: Boolean get() = resumeOnConnectState.value; set(v) { resumeOnConnectState.value = v; put("resumeOnConnect", v) }
+
+    private val minSecondsState = mutableStateOf(sp.getInt("minSeconds", 0))
+    /** Tracks shorter than this many seconds are left out of the library; 0 keeps all. */
+    var minTrackSeconds: Int get() = minSecondsState.value; set(v) { minSecondsState.value = v; sp.edit().putInt("minSeconds", v).apply() }
+
+    private val albumColumnsState = mutableStateOf(sp.getInt("albumColumns", 0))
+    /** Columns of the album grid; 0 fits as many as the width allows. */
+    var albumColumns: Int get() = albumColumnsState.value; set(v) { albumColumnsState.value = v; sp.edit().putInt("albumColumns", v).apply() }
+
     fun sortOf(playlistId: String): Pair<PlaylistSort, Boolean> {
         val mode = PlaylistSort.entries.firstOrNull { it.name == sp.getString("sort_$playlistId", null) }
             ?: PlaylistSort.AsInMusic
@@ -196,6 +237,19 @@ class Prefs(context: Context) {
         plays = plays + (id to localPlays(id) + 1)
         playsVersion++
         sp.edit().putString("history", history.joinToString(",")).putStringSet("plays", plays.map { (k, v) -> "$k:$v" }.toSet()).apply()
+    }
+
+    fun clearHistory() {
+        history = emptyList()
+        playsVersion++
+        sp.edit().remove("history").apply()
+    }
+
+    /** Forgets the plays counted on this phone; those from the Mac stay. */
+    fun resetLocalPlays() {
+        plays = emptyMap()
+        playsVersion++
+        sp.edit().remove("plays").apply()
     }
 
     fun favoriteOverrides(): Map<String, Boolean> =

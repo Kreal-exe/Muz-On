@@ -107,6 +107,38 @@ class PlaybackService : MediaSessionService() {
             .build()
         // The heart in the notification follows changes made anywhere.
         scope.launch { app.repository.library.collect { updateHeart() } }
+        knownOutputs.addAll(audio.getDevices(android.media.AudioManager.GET_DEVICES_OUTPUTS).map { it.id })
+        audio.registerAudioDeviceCallback(outputs, android.os.Handler(android.os.Looper.getMainLooper()))
+    }
+
+    private val audio by lazy { getSystemService(android.media.AudioManager::class.java) }
+
+    /** Outputs already there; registering reports them all as added, which must not start the music. */
+    private val knownOutputs = mutableSetOf<Int>()
+
+    private val headphones = setOf(
+        android.media.AudioDeviceInfo.TYPE_WIRED_HEADPHONES,
+        android.media.AudioDeviceInfo.TYPE_WIRED_HEADSET,
+        android.media.AudioDeviceInfo.TYPE_USB_HEADSET,
+        android.media.AudioDeviceInfo.TYPE_BLUETOOTH_A2DP,
+        android.media.AudioDeviceInfo.TYPE_BLE_HEADSET,
+        android.media.AudioDeviceInfo.TYPE_BLE_SPEAKER,
+    )
+
+    private val outputs = object : android.media.AudioDeviceCallback() {
+        override fun onAudioDevicesAdded(added: Array<out android.media.AudioDeviceInfo>) {
+            val fresh = added.filter { knownOutputs.add(it.id) }
+            if (!app.prefs.resumeOnConnect || fresh.none { it.type in headphones }) return
+            val player = session?.player ?: return
+            if (player.mediaItemCount == 0 || player.isPlaying) return
+            if (player.playbackState == Player.STATE_IDLE) player.prepare()
+            if (player.playbackState == Player.STATE_ENDED) player.seekToDefaultPosition()
+            player.play()
+        }
+
+        override fun onAudioDevicesRemoved(removed: Array<out android.media.AudioDeviceInfo>) {
+            removed.forEach { knownOutputs.remove(it.id) }
+        }
     }
 
     private fun currentIsFavorite(): Boolean {
@@ -132,6 +164,7 @@ class PlaybackService : MediaSessionService() {
 
     override fun onDestroy() {
         scope.cancel()
+        audio.unregisterAudioDeviceCallback(outputs)
         app.exoPlayer = null
         session?.run {
             player.release()

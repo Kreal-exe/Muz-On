@@ -72,10 +72,28 @@ class LibraryRepository(private val context: Context, private val prefs: Prefs) 
 
     /** The library as shown: hearts laid over, then the app's own playlists after those of Music. */
     private fun present(read: Library): Library {
-        val shown = withFavorites(read)
+        val shown = withoutShort(withFavorites(read))
         val mine = ownPlaylists()
         if (mine.isEmpty()) return shown
         return Library(shown.source, shown.tracks, shown.playlists + mine, shown.databaseTime, shown.failure).also { it.prepare() }
+    }
+
+    /**
+     * Leaves out tracks shorter than the setting asks, ringtones and voice notes in the music folder.
+     * Only the library as shown: hearts set on such a track are still written down for the Mac.
+     * A track whose length is unknown stays.
+     */
+    private fun withoutShort(read: Library): Library {
+        val min = prefs.minTrackSeconds * 1000L
+        if (min <= 0) return read
+        val kept = read.tracks.filter { it.durationMs <= 0 || it.durationMs >= min }
+        if (kept.size == read.tracks.size) return read
+        return Library(read.source, kept, read.playlists, read.databaseTime, read.failure).also { it.prepare() }
+    }
+
+    /** Shows the library again after the shortest length changed, without reading it anew. */
+    suspend fun reapplyFilters() = withContext(Dispatchers.Default) {
+        mutex.withLock { base?.let { state.value = present(it) } }
     }
 
     private suspend fun changeOwn(change: (List<Playlist>) -> List<Playlist>) = withContext(Dispatchers.IO) {
