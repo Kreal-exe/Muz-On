@@ -189,11 +189,17 @@ class PlayerConnection(private val context: Context, private val prefs: Prefs, p
         val tracks = list.filter { it.uri != null }
         if (tracks.isEmpty()) return
         val startTrack = list.getOrNull(start)
-        val index = if (startTrack?.uri != null) tracks.indexOf(startTrack).coerceAtLeast(0) else 0
+        // Shuffle starts on a random track. Passing no start index would keep the current position,
+        // so "shuffle" used to go on playing whatever was playing.
+        val index = when {
+            shuffled -> tracks.indices.random()
+            startTrack?.uri != null -> tracks.indexOf(startTrack).coerceAtLeast(0)
+            else -> 0
+        }
         queue = tracks
         withController { c ->
+            c.setMediaItems(tracks.map(::toItem), index, 0L)
             c.shuffleModeEnabled = shuffled
-            c.setMediaItems(tracks.map(::toItem), if (shuffled) C.INDEX_UNSET else index, C.TIME_UNSET)
             c.prepare()
             c.play()
             prefs.saveQueue(tracks.map { it.id }, index, 0)

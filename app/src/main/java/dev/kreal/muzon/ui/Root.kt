@@ -37,6 +37,10 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Home
 import androidx.compose.material3.Icon
 import androidx.compose.runtime.Composable
+import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.zIndex
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
@@ -180,7 +184,7 @@ private fun CompactShell(vm: AppViewModel, library: Library) {
     val holder = rememberSaveableStateHolder()
     val p = LocalPalette.current
     val bottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
-    val tabsHeight = 54.dp + bottom
+    val tabsHeight = 64.dp + bottom
     val hasTrack = vm.connection.current != null
     val space = tabsHeight + if (hasTrack) 66.dp else 6.dp
 
@@ -214,7 +218,7 @@ private fun CompactShell(vm: AppViewModel, library: Library) {
                 .background(p.background)
                 .pointerInput(Unit) { }
                 .padding(bottom = bottom)
-                .height(54.dp),
+                .height(64.dp),
         )
     }
 }
@@ -254,24 +258,116 @@ private fun BackHandling(vm: AppViewModel) {
 }
 
 @Composable
+private fun AppViewModel.tabs(): List<Tab> {
+    val named = prefs.tabOrder.mapNotNull { n -> Tab.entries.firstOrNull { it.name == n } }
+    return named + Tab.entries.filter { it !in named }
+}
+
+/**
+ * Bottom tabs with their names; a pill behind the icon marks the open one. A long press lifts a tab,
+ * which then follows the finger sideways and swaps with the ones it passes.
+ */
+@Composable
 private fun TabBar(vm: AppViewModel, modifier: Modifier) {
     val p = LocalPalette.current
-    Row(modifier, horizontalArrangement = Arrangement.SpaceEvenly, verticalAlignment = Alignment.CenterVertically) {
-        Tab.entries.forEach { tab ->
-            val selected = vm.nav.tab == tab
-            val theme = LocalAppTheme.current
-            Tappable({ vm.nav.select(tab) }, Modifier.size(48.dp), bounded = false) {
-                Box(
-                    Modifier
-                        .size(40.dp)
-                        .then(if (selected && theme == AppTheme.Aero) Modifier.block(tabColor(tab), theme, 20.dp) else Modifier)
-                        .graphicsLayer { alpha = if (selected || theme == AppTheme.Poster) 1f else 0.5f },
-                    contentAlignment = Alignment.Center,
-                ) {
-                    TabIcon(tab, if (selected) (if (theme == AppTheme.Aero) Blocks.on(tabColor(tab)) else tabColor(tab)) else p.muted)
+    val theme = LocalAppTheme.current
+    val tabs = vm.tabs()
+    var lifted by remember { mutableStateOf<Tab?>(null) }
+    val liftX = remember { mutableFloatStateOf(0f) }
+    val haptic = androidx.compose.ui.platform.LocalHapticFeedback.current
+    BoxWithConstraints(modifier) {
+        val slot = constraints.maxWidth.toFloat() / tabs.size
+        val currentTabs by androidx.compose.runtime.rememberUpdatedState(tabs)
+        Box(
+            Modifier
+                .fillMaxSize()
+                .pointerInput(slot) {
+                    detectDragGesturesAfterLongPress(
+                        onDragStart = { at ->
+                            val i = (at.x / slot).toInt().coerceIn(0, currentTabs.lastIndex)
+                            lifted = currentTabs[i]
+                            liftX.floatValue = i * slot
+                            haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress)
+                        },
+                        onDragEnd = { lifted = null },
+                        onDragCancel = { lifted = null },
+                        onDrag = { change, amount ->
+                            val tab = lifted ?: return@detectDragGesturesAfterLongPress
+                            change.consume()
+                            liftX.floatValue = (liftX.floatValue + amount.x).coerceIn(0f, slot * (currentTabs.size - 1))
+                            val target = ((liftX.floatValue + slot / 2) / slot).toInt().coerceIn(0, currentTabs.lastIndex)
+                            val from = currentTabs.indexOf(tab)
+                            if (target != from) {
+                                val list = currentTabs.toMutableList()
+                                list.add(target, list.removeAt(from))
+                                vm.prefs.updateTabOrder(list.map { it.name })
+                            }
+                        },
+                    )
+                },
+        ) {
+            tabs.forEachIndexed { index, tab ->
+                androidx.compose.runtime.key(tab) {
+                    val x by androidx.compose.animation.core.animateFloatAsState(index * slot, spring(dampingRatio = 0.85f, stiffness = 500f), label = "tabx")
+                    TabItem(
+                        vm, tab, theme, p,
+                        Modifier
+                            .width(with(LocalDensity.current) { slot.toDp() })
+                            .fillMaxHeight()
+                            .zIndex(if (lifted == tab) 1f else 0f)
+                            .graphicsLayer {
+                                translationX = if (lifted == tab) liftX.floatValue else x
+                                val s = if (lifted == tab) 1.12f else 1f
+                                scaleX = s
+                                scaleY = s
+                            },
+                    )
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun TabItem(vm: AppViewModel, tab: Tab, theme: AppTheme, p: Palette, modifier: Modifier) {
+    val selected = vm.nav.tab == tab
+    val color = tabColor(tab)
+    val shown by androidx.compose.animation.core.animateFloatAsState(if (selected) 1f else 0f, androidx.compose.animation.core.tween(180), label = "tab")
+    Column(
+        modifier.clickable(interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }, indication = null) { vm.nav.select(tab) },
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center,
+    ) {
+        // A pill behind the icon marks the open tab.
+        Box(Modifier.size(width = 56.dp, height = 30.dp), contentAlignment = Alignment.Center) {
+            Box(
+                Modifier
+                    .matchParentSize()
+                    .graphicsLayer {
+                        alpha = shown
+                        scaleX = 0.6f + 0.4f * shown
+                    }
+                    .then(
+                        if (theme == AppTheme.Aero) Modifier.block(color, theme, 15.dp)
+                        else Modifier.clip(RoundedCornerShape(15.dp)).background(color.copy(alpha = if (p.isDark) 0.24f else 0.18f)),
+                    ),
+            )
+            TabIcon(tab, if (!selected) p.muted else if (theme == AppTheme.Aero) Blocks.on(color) else color, 22.dp)
+        }
+        Spacer(Modifier.height(3.dp))
+        Txt(
+            stringResource(
+                when (tab) {
+                    Tab.Home -> R.string.home
+                    Tab.Playlists -> R.string.place_playlists
+                    Tab.Artists -> R.string.place_artists
+                    Tab.Albums -> R.string.place_albums
+                    Tab.Songs -> R.string.place_songs
+                },
+            ),
+            Type.tiny.copy(fontWeight = androidx.compose.ui.text.font.FontWeight(if (selected) 700 else 500)),
+            if (selected) p.text else p.muted,
+        )
     }
 }
 
@@ -319,8 +415,9 @@ private fun WideShell(vm: AppViewModel, library: Library) {
 private fun Sidebar(vm: AppViewModel, library: Library, modifier: Modifier) {
     val p = LocalPalette.current
     val theme = LocalAppTheme.current
+    val tabs = vm.tabs()
     LazyColumn(modifier.background(p.background), contentPadding = PaddingValues(start = 8.dp, end = 4.dp, top = 6.dp, bottom = 8.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
-        items(Tab.entries, key = { it.name }) { tab ->
+        items(tabs, key = { it.name }) { tab ->
             val selected = vm.nav.tab == tab
             val color = tabColor(tab)
             val on = Blocks.on(color)

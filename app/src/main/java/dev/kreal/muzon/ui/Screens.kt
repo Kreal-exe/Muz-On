@@ -8,6 +8,7 @@ import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -53,6 +54,7 @@ import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.animation.core.spring
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.getValue
@@ -224,107 +226,129 @@ private fun HomeScreen(vm: AppViewModel, library: Library) {
 }
 
 /**
- * Half-width tiles pair up; a wider one takes its own row. In edit mode the tiles are moved with the
- * finger, resized by the handle in their corner (sideways for width, down for height) and hidden with
- * the badge; hidden places wait below to be added back. A long press opens edit mode.
+ * Half-width tiles pair up; a wider one takes its own row. Every tile is placed by its own animated
+ * offset, so a reorder or a resize slides tiles into place instead of jumping. In edit mode the grid
+ * itself follows the finger: it never loses a drag when tiles change rows. A long press opens edit
+ * mode; the corner handle resizes, the badge hides, hidden places wait below to be added back.
  */
 @Composable
 private fun PlaceTiles(vm: AppViewModel, library: Library, places: List<Place>, theme: AppTheme, editing: Boolean, onMoving: (Boolean) -> Unit, onEdit: () -> Unit) {
     val p = LocalPalette.current
-    val sizes = places.map { vm.prefs.tileSize(it) }
-    val rows = remember(places, sizes) {
-        val out = ArrayList<List<Place>>()
-        var half = ArrayList<Place>()
+    val density = LocalDensity.current
+    BoxWithConstraints(Modifier.fillMaxWidth()) {
+        val gap = 8.dp
+        val full = maxWidth
+        val half = (maxWidth - gap) / 2
+        // Slots in dp, computed in order: two halves share a row, anything wider gets its own.
+        val slots = HashMap<Place, androidx.compose.ui.unit.DpRect>()
+        var x = 0.dp
+        var y = 0.dp
+        var rowHeight = 0.dp
         for (place in places) {
-            if (vm.prefs.tileSize(place) == TileSize.Half) {
-                half.add(place)
-                if (half.size == 2) {
-                    out += half
-                    half = ArrayList()
-                }
-            } else {
-                out += listOf(place)
+            val size = vm.prefs.tileSize(place)
+            val w = if (size == TileSize.Half) half else full
+            val h = if (size == TileSize.Large) 120.dp else 82.dp
+            if (x > 0.dp && (size != TileSize.Half || x + w > full + 1.dp)) {
+                x = 0.dp
+                y += rowHeight + gap
+                rowHeight = 0.dp
             }
+            slots[place] = androidx.compose.ui.unit.DpRect(x, y, x + w, y + h)
+            rowHeight = maxOf(rowHeight, h)
+            if (size == TileSize.Half) x += w + gap else { x = 0.dp; y += rowHeight + gap; rowHeight = 0.dp }
         }
-        if (half.isNotEmpty()) out += half
-        out
-    }
-    val bounds = remember { androidx.compose.runtime.mutableStateMapOf<Place, androidx.compose.ui.geometry.Rect>() }
-    var dragging by remember { mutableStateOf<Place?>(null) }
-    // Where the finger holds the dragged tile, as its top-left corner in the column.
-    val dragTopLeft = remember { mutableStateOf(Offset.Zero) }
-    var origin by remember { mutableStateOf<androidx.compose.ui.layout.LayoutCoordinates?>(null) }
-    Column(
-        Modifier.onGloballyPositioned { origin = it },
-        verticalArrangement = Arrangement.spacedBy(8.dp),
-    ) {
-        rows.forEach { row ->
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                row.forEach { place ->
-                    val tileModifier = Modifier
-                        .weight(1f)
-                        .zIndex(if (dragging == place) 1f else 0f)
-                        .onGloballyPositioned { c ->
-                            val o = origin ?: return@onGloballyPositioned
-                            bounds[place] = androidx.compose.ui.geometry.Rect(o.localPositionOf(c, Offset.Zero), c.size.toSize())
-                        }
-                        .graphicsLayer {
-                            if (dragging == place) {
-                                val at = bounds[place]?.topLeft ?: Offset.Zero
-                                translationX = dragTopLeft.value.x - at.x
-                                translationY = dragTopLeft.value.y - at.y
-                                scaleX = 1.04f
-                                scaleY = 1.04f
-                            }
-                        }
-                        .then(
-                            if (!editing) Modifier else Modifier.pointerInput(place) {
-                                detectDragGestures(
-                                    onDragStart = {
+        val height = if (x > 0.dp) y + rowHeight else (y - gap).coerceAtLeast(0.dp)
+
+        var dragging by remember { mutableStateOf<Place?>(null) }
+        val dragTopLeft = remember { mutableStateOf(Offset.Zero) }
+        val currentSlots by androidx.compose.runtime.rememberUpdatedState(slots)
+        Column {
+            Box(
+                Modifier
+                    .fillMaxWidth()
+                    .height(height)
+                    .then(
+                        if (!editing) Modifier else Modifier.pointerInput(Unit) {
+                            fun rectPx(r: androidx.compose.ui.unit.DpRect) = androidx.compose.ui.geometry.Rect(r.left.toPx(), r.top.toPx(), r.right.toPx(), r.bottom.toPx())
+                            detectDragGestures(
+                                onDragStart = { start ->
+                                    val hit = currentSlots.entries.firstOrNull { rectPx(it.value).contains(start) }
+                                    if (hit != null) {
+                                        dragging = hit.key
+                                        dragTopLeft.value = rectPx(hit.value).topLeft
                                         onMoving(true)
-                                        dragging = place
-                                        dragTopLeft.value = bounds[place]?.topLeft ?: Offset.Zero
-                                    },
-                                    onDragEnd = { dragging = null; onMoving(false) },
-                                    onDragCancel = { dragging = null; onMoving(false) },
-                                    onDrag = { change, amount ->
-                                        change.consume()
-                                        dragTopLeft.value += amount
-                                        val size = bounds[place]?.size ?: return@detectDragGestures
-                                        val center = dragTopLeft.value + Offset(size.width / 2, size.height / 2)
-                                        val over = bounds.entries.firstOrNull { it.key != place && it.value.contains(center) }?.key
-                                        if (over != null) {
-                                            val list = vm.prefs.places.toMutableList()
-                                            val from = list.indexOf(place)
-                                            val to = list.indexOf(over)
-                                            if (from >= 0 && to >= 0) {
-                                                list.add(to, list.removeAt(from))
-                                                vm.prefs.updatePlaces(list)
-                                            }
+                                    }
+                                },
+                                onDragEnd = { dragging = null; onMoving(false) },
+                                onDragCancel = { dragging = null; onMoving(false) },
+                                onDrag = { change, amount ->
+                                    val place = dragging ?: return@detectDragGestures
+                                    change.consume()
+                                    dragTopLeft.value += amount
+                                    val own = rectPx(currentSlots[place] ?: return@detectDragGestures)
+                                    val center = dragTopLeft.value + Offset(own.width / 2, own.height / 2)
+                                    val over = currentSlots.entries.firstOrNull { it.key != place && rectPx(it.value).contains(center) }?.key
+                                    if (over != null) {
+                                        val list = vm.prefs.places.toMutableList()
+                                        val from = list.indexOf(place)
+                                        val to = list.indexOf(over)
+                                        if (from >= 0 && to >= 0) {
+                                            list.add(to, list.removeAt(from))
+                                            vm.prefs.updatePlaces(list)
                                         }
-                                    },
-                                )
-                            },
+                                    }
+                                },
+                            )
+                        },
+                    ),
+            ) {
+                places.forEach { place ->
+                    val slot = slots.getValue(place)
+                    androidx.compose.runtime.key(place) {
+                        val spec = spring<androidx.compose.ui.unit.IntOffset>(dampingRatio = 0.85f, stiffness = 420f)
+                        val target = with(density) { androidx.compose.ui.unit.IntOffset(slot.left.roundToPx(), slot.top.roundToPx()) }
+                        val moved by androidx.compose.animation.core.animateIntOffsetAsState(target, spec, label = "slot")
+                        val w by androidx.compose.animation.core.animateDpAsState(slot.right - slot.left, spring(stiffness = 420f), label = "w")
+                        val h by androidx.compose.animation.core.animateDpAsState(slot.bottom - slot.top, spring(stiffness = 420f), label = "h")
+                        PlaceTile(
+                            vm, library, place, theme, editing,
+                            Modifier
+                                .size(w, h)
+                                .zIndex(if (dragging == place) 1f else 0f)
+                                .offset {
+                                    if (dragging == place) {
+                                        androidx.compose.ui.unit.IntOffset(dragTopLeft.value.x.toInt(), dragTopLeft.value.y.toInt())
+                                    } else {
+                                        moved
+                                    }
+                                }
+                                .graphicsLayer {
+                                    val lifted = dragging == place
+                                    scaleX = if (lifted) 1.04f else 1f
+                                    scaleY = if (lifted) 1.04f else 1f
+                                },
+                            onMoving,
+                            onEdit,
                         )
-                    PlaceTile(vm, library, place, theme, editing, tileModifier, onMoving, onEdit)
+                    }
                 }
-                if (row.size == 1 && vm.prefs.tileSize(row[0]) == TileSize.Half) Spacer(Modifier.weight(1f))
             }
-        }
-        if (editing) {
-            val hidden = Place.entries.filter { it !in places }
-            if (hidden.isNotEmpty()) {
-                Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
-                    hidden.forEach { place ->
-                        Row(
-                            Modifier.clip(RoundedCornerShape(16.dp)).background(p.surfaceHigh)
-                                .clickable { vm.prefs.updatePlaces(vm.prefs.places + place) }
-                                .padding(horizontal = 10.dp, vertical = 6.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            Icon(Icons.Rounded.Add, null, tint = Blocks.forPlace(place), modifier = Modifier.size(16.dp))
-                            Spacer(Modifier.width(3.dp))
-                            Txt(place.label(), Type.small, p.text)
+            if (editing) {
+                val hidden = Place.entries.filter { it !in places }
+                if (hidden.isNotEmpty()) {
+                    Spacer(Modifier.height(8.dp))
+                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
+                        hidden.forEach { place ->
+                            Row(
+                                Modifier.clip(RoundedCornerShape(16.dp)).background(p.surfaceHigh)
+                                    .clickable { vm.prefs.updatePlaces(vm.prefs.places + place) }
+                                    .padding(horizontal = 10.dp, vertical = 6.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Icon(Icons.Rounded.Add, null, tint = Blocks.forPlace(place), modifier = Modifier.size(16.dp))
+                                Spacer(Modifier.width(3.dp))
+                                Txt(place.label(), Type.small, p.text)
+                            }
                         }
                     }
                 }
@@ -340,7 +364,7 @@ private fun PlaceTile(vm: AppViewModel, library: Library, place: Place, theme: A
     val on = Blocks.on(color)
     val size = vm.prefs.tileSize(place)
     val haptic = androidx.compose.ui.platform.LocalHapticFeedback.current
-    Box(modifier.height(if (size == TileSize.Large) 120.dp else 82.dp)) {
+    Box(modifier) {
         // Name on top across the whole tile, count under it, covers in the lower right corner.
         Box(
             Modifier
