@@ -57,6 +57,32 @@ class LibraryRepository(private val context: Context, private val prefs: Prefs) 
     /** The library as read, before the hearts set on this phone are laid over it. */
     private var base: Library? = null
 
+    /** From the last database read: "ms<file id>" of a phone file → the Mac song it turned out to be. */
+    private var deviceIds: Map<String, String> = emptyMap()
+
+    /**
+     * A heart or a playlist entry made while a song was known only by its file on the phone ("ms…")
+     * moves to the Mac song once the database has it; without this it would point at an id that no
+     * longer exists and the heart would vanish.
+     */
+    private fun adoptDeviceIds() {
+        val map = deviceIds
+        if (map.isEmpty()) return
+        val overrides = prefs.favoriteOverrides()
+        overrides.forEach { (id, on) ->
+            val mac = map[id] ?: return@forEach
+            if (mac !in overrides) prefs.setFavoriteOverride(mac, on)
+            prefs.setFavoriteOverride(id, null)
+        }
+        fun moved(ids: List<String>) = ids.map { map[it] ?: it }
+        val own = ownPlaylists()
+        if (own.any { pl -> pl.trackIds.any(map::containsKey) }) saveOwn(own.map { it.copy(trackIds = moved(it.trackIds).distinct()) })
+        val edits = playlistEdits()
+        if (edits.values.any { e -> e.tracks.orEmpty().any(map::containsKey) }) {
+            saveEdits(edits.mapValues { (_, e) -> e.tracks?.let { Edit(e.name, moved(it), e.deleted) } ?: e })
+        }
+    }
+
     // ---- Playlists made in the app, kept in its own folder beside the list of hearts.
 
     private val ownFile get() = File(context.getExternalFilesDir(null) ?: context.filesDir, "playlists.json")
@@ -442,12 +468,13 @@ class LibraryRepository(private val context: Context, private val prefs: Prefs) 
      * tools/sync-library.sh (tools/apply-changes.js applies it in Music):
      *
      *     {"version": 1,
-     *      "favourites": [{"id": "<persistent id>", "on": true}],
-     *      "playlists": [{"id": "own-…", "new": true, "name": "…", "tracks": ["<persistent id>", …]},
+     *      "favourites": [{"id": "<persistent id>", "on": true}, {"id": "ms…", "path": "<under Music/>", "on": true}],
+     *      "playlists": [{"id": "own-…", "new": true, "name": "…", "tracks": ["<persistent id>", "path:<under Music/>", …]},
      *                    {"id": "<persistent id>", "name": "…", "tracks": […]},
      *                    {"id": "<persistent id>", "deleted": true}]}
      *
-     * Songs that exist only on the phone (ids starting "ms") are left out: the Mac does not have them.
+     * A song the phone knows only by its file (id "ms…", not in the database the Mac sent yet) goes by
+     * its path under Music/, which is the same on the Mac: Music finds it there if it has the file.
      */
     private fun writeChanges(read: Library) {
         val dir = context.getExternalFilesDir(null) ?: return
@@ -457,10 +484,16 @@ class LibraryRepository(private val context: Context, private val prefs: Prefs) 
             file.delete()
             return
         }
-        fun onMac(ids: List<String>) = org.json.JSONArray(ids.filter { read.byId.containsKey(it) && !it.startsWith("ms") })
+        fun onMac(ids: List<String>) = org.json.JSONArray(ids.mapNotNull { id ->
+            val t = read.byId[id] ?: return@mapNotNull null
+            if (id.startsWith("ms")) t.sourcePath.takeIf { it.isNotEmpty() }?.let { "path:$it" } else id
+        })
         val favourites = org.json.JSONArray()
-        prefs.favoriteOverrides().filterKeys { read.byId.containsKey(it) }.forEach { (id, on) ->
-            favourites.put(org.json.JSONObject().put("id", id).put("on", on))
+        prefs.favoriteOverrides().forEach { (id, on) ->
+            val t = read.byId[id] ?: return@forEach
+            val o = org.json.JSONObject().put("id", id).put("on", on)
+            if (id.startsWith("ms")) o.put("path", t.sourcePath)
+            favourites.put(o)
         }
         val playlists = org.json.JSONArray()
         ownPlaylists().forEach { pl ->
@@ -566,6 +599,7 @@ class LibraryRepository(private val context: Context, private val prefs: Prefs) 
             library.prepare()
             loadedStamp = stamp
             base = library
+            if (library.source == LibrarySource.MusicDatabase) adoptDeviceIds()
             // A heart the Mac already took over needs no override any more.
             prefs.favoriteOverrides().forEach { (id, on) -> if (library.byId[id]?.favorite == on) prefs.setFavoriteOverride(id, null) }
             restorePlaylistFiles(library)
@@ -620,11 +654,11 @@ class LibraryRepository(private val context: Context, private val prefs: Prefs) 
             MusicDb.parse(context.contentResolver.openInputStream(db.db)!!.use { it.readBytes() })
         }
         val resolver = PathResolver(files.map { PathResolver.Entry(it.relative, it.title, it) })
-        val claimed = HashSet<Long>()
+        val claimed = HashMap<Long, String>()
         val fromMac = parsed.tracks.map { track ->
             val file = resolver.resolve(track.sourcePath, track.title)
             if (file == null) track else {
-                claimed += file.id
+                claimed.putIfAbsent(file.id, track.id)
                 track.copy(uri = file.uri, filePath = file.path)
             }
         }
@@ -632,8 +666,12 @@ class LibraryRepository(private val context: Context, private val prefs: Prefs) 
         // in the library too, read from their own tags, until the next sync brings them in properly.
         // A second copy of a song the Mac already has (another album, another format) is not a new song.
         fun same(t: Track) = Search.normalize(t.title) + "\u0000" + Search.normalize(t.shownArtist)
-        val known = parsed.tracks.mapTo(HashSet(), ::same)
-        val extra = files.filter { it.id !in claimed }.map(::deviceTrack).filter { same(it) !in known }
+        val known = HashMap<String, String>()
+        parsed.tracks.forEach { known.putIfAbsent(same(it), it.id) }
+        val unclaimed = files.filter { it.id !in claimed }.map(::deviceTrack)
+        val extra = unclaimed.filter { same(it) !in known }
+        // The id each phone file had while the Mac did not know it, and the Mac song it is now.
+        deviceIds = claimed.mapKeys { "ms${it.key}" } + unclaimed.mapNotNull { t -> known[same(t)]?.let { t.id to it } }
         if (extra.isNotEmpty()) Log.i(TAG, "${extra.size} songs on the phone are not in the Mac library")
         val tracks = fromMac + extra
         val order = db.order?.let { uri ->

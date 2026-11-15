@@ -42,12 +42,32 @@ function run(argv) {
     const ids = library.tracks.persistentID()
     const at = {}
     ids.forEach((id, i) => { at[id.toUpperCase()] = i })
+    // A song the phone knew only as a file comes as its path under Music/, which is the same on the
+    // Mac (~/Music/...). Names are compared in one Unicode form and case: macOS often spells a name
+    // differently from the phone, byte for byte.
+    const key = p => p.normalize('NFC').toLowerCase()
+    let byPath = null
+    const idOfPath = rel => {
+        if (!byPath) {
+            byPath = {}
+            const root = key($.NSHomeDirectory().js + '/Music/')
+            let locations = []
+            try { locations = library.tracks.location() } catch (e) {}
+            locations.forEach((loc, i) => {
+                const k = loc ? key(loc.toString()) : ''
+                if (k.startsWith(root)) byPath[k.slice(root.length)] = ids[i].toUpperCase()
+            })
+        }
+        return byPath[key(rel)] || null
+    }
+    // "path:<under Music/>" in a list of songs becomes the Music id of that file.
+    const resolve = id => (id.startsWith('path:') ? idOfPath(id.slice(5)) || id : id)
     const track = id => (id.toUpperCase() in at ? library.tracks[at[id.toUpperCase()]] : null)
     const out = []
 
-    ;(changes.favourites || []).forEach(({ id, on }) => {
-        const t = track(id)
-        if (!t) return log('no track ' + id)
+    ;(changes.favourites || []).forEach(({ id, path, on }) => {
+        const t = track(id) || (path ? track(idOfPath(path) || '') : null)
+        if (!t) return log('no track ' + (path || id))
         try { t.favorited = on } catch (e) { t.loved = on }
         log((on ? 'heart  ' : 'unheart ') + t.name())
     })
@@ -60,7 +80,7 @@ function run(argv) {
     // Brings the playlist's songs to [wanted], touching as little as it can: songs only added at the
     // end are added, songs only taken out are taken out; anything else rebuilds the list in order.
     const setTracks = (playlist, wanted) => {
-        wanted = wanted.map(id => id.toUpperCase()).filter(id => id in at)
+        wanted = wanted.map(id => resolve(id).toUpperCase()).filter(id => id in at)
         // An empty playlist answers with an error rather than an empty list.
         let now = []
         try { now = playlist.tracks.persistentID().map(id => id.toUpperCase()) } catch (e) {}

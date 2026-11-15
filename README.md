@@ -133,8 +133,10 @@ tools/sync-library.sh
 The script works both ways:
 
 1. applies in Music what was changed on the phone (`library-changes.json`, by `tools/apply-changes.js`): hearts, which Music then follows in its smart playlists; playlists made on the phone; songs added, removed or moved, names changed and playlists deleted in regular playlists. Smart playlists are left to their rules. Running it twice never makes a playlist twice;
-2. writes `playlist-order.txt`, the order each playlist shows in Music (Music keeps that sort in macOS settings, not in the library);
-3. copies `Library.musicdb`, the order file and the list of applied changes to `Music/Music/Music Library.musiclibrary` on the phone, which then shows Music's playlists as they now are.
+   A heart set on a song the phone knew only as a file (copied there before Music had it) is found in Music by its path, and once the Mac library has the song the heart stays on it;
+2. copies to the phone the songs of the Mac library whose files it does not have yet, into the same folders (`~/Music/<path>` → `Music/<path>`), and hands them to the phone's media library. Nothing on the phone is deleted or overwritten; `MUZON_NO_FILES=1 tools/sync-library.sh` skips this step;
+3. writes `playlist-order.txt`, the order each playlist shows in Music (Music keeps that sort in macOS settings, not in the library);
+4. copies `Library.musicdb`, the order file and the list of applied changes to `Music/Music/Music Library.musiclibrary` on the phone, which then shows Music's playlists as they now are.
 
 Until a sync, changed playlists show "Waiting for sync with the computer", and Settings counts what is waiting.
 
@@ -173,6 +175,8 @@ JDK 25 runs Gradle; `compileSdk` is 37, `targetSdk` 36, `minSdk` 30 (Android 11)
 ```bash
 ./gradlew :app:assembleRelease
 ```
+
+Releases build themselves: pushing a tag `v*` makes GitHub Actions (`.github/workflows/release.yml`) build the APK, sign it with the Muz On key kept in the repository's secrets, and put it on that tag's release. "Run workflow" builds any tag again.
 
 Release signing reads `release.keystoreFile`, `release.keystorePassword`, `release.keyAlias` and `release.keyPassword` from `~/.gradle/gradle.properties`.
 

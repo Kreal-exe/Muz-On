@@ -1,0 +1,77 @@
+# Builds a signed APK for a version tag and puts it on that tag's release, replacing an APK already
+# there. A pushed tag v* runs it; "Run workflow" builds any tag again, older ones included (a tag made
+# before this file existed has no workflow of its own, so it is built with this one).
+#
+# Secrets: MUZON_KEYSTORE (the keystore, base64), MUZON_KEYSTORE_PASSWORD, MUZON_KEY_ALIAS,
+# MUZON_KEY_PASSWORD.
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Tag to build, e.g. v1.0.0"
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    env:
+      TAG: ${{ github.event.inputs.tag || github.ref_name }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: refs/tags/${{ env.TAG }}
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "25"
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      - name: Android SDK parts
+        run: |
+          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "platforms;android-37.0" "build-tools;36.0.0" > /dev/null
+
+      - name: Signing key
+        env:
+          KEYSTORE: ${{ secrets.MUZON_KEYSTORE }}
+        run: |
+          test -n "$KEYSTORE" || { echo "The MUZON_KEYSTORE secret is missing"; exit 1; }
+          echo "$KEYSTORE" | base64 -d > "$RUNNER_TEMP/muzon.jks"
+
+      - name: Build
+        env:
+          STORE_PASSWORD: ${{ secrets.MUZON_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.MUZON_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.MUZON_KEY_PASSWORD }}
+        run: |
+          ./gradlew --no-daemon :app:assembleRelease \
+            -Prelease.keystoreFile="$RUNNER_TEMP/muzon.jks" \
+            -Prelease.keystorePassword="$STORE_PASSWORD" \
+            -Prelease.keyAlias="$KEY_ALIAS" \
+            -Prelease.keyPassword="$KEY_PASSWORD"
+          apk=$(find app/build/outputs/apk/release -name '*.apk' | head -1)
+          "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --print-certs "$apk" | grep -q "CN=Muz On" || { echo "Not signed with the Muz On key"; exit 1; }
+          cp "$apk" "Muz-On-${TAG#v}.apk"
+
+      - name: Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if gh release view "$TAG" > /dev/null 2>&1; then
+            gh release upload "$TAG" "Muz-On-${TAG#v}.apk" --clobber
+          else
+            gh release create "$TAG" "Muz-On-${TAG#v}.apk" --title "Muz On ${TAG#v}" --generate-notes
+          fi
+
+      - name: Forget the key
+        if: always()
+        run: rm -f "$RUNNER_TEMP/muzon.jks"
