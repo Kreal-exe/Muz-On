@@ -20,16 +20,10 @@
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-34D399" alt="MIT"></a>
 </p>
 
-<table align="center">
-  <tr>
-    <td align="center"><img src="docs/demo.webp" width="290" alt="Phone screen: a track from 1:30 with its lyrics on the cover, folding the player, sorting by title and running the alphabet, the tabs and every setting"></td>
-    <td align="center"><img src="docs/demo-fold.webp" width="460" alt="Inner screen of a foldable: shuffle, the two-column player with lyrics, the alphabet, the tabs and every setting"></td>
-  </tr>
-  <tr>
-    <td align="center"><sub>Phone screen</sub></td>
-    <td align="center"><sub>Inner screen of a foldable</sub></td>
-  </tr>
-</table>
+<p align="center">
+  <img src="docs/demo.webp" width="760" alt="The outer screen and the inner screen of a foldable side by side, in step: the player opens and folds back, then the tabs: songs, artists, albums, playlists, and home again">
+</p>
+<p align="center"><sub>Phone screen and inner screen of a foldable</sub></p>
 
 ## About
 

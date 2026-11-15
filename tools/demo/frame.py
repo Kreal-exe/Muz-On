@@ -9,11 +9,17 @@ import sys
 from PIL import Image, ImageDraw, ImageFilter
 
 kind, out = sys.argv[1], sys.argv[2]
+# Optional canvas height: phones made with the same height stand side by side at one size.
+height = int(sys.argv[3]) if len(sys.argv) > 3 else None
 # Canvas, screen size in pixels of the recording, and how tall the screen is drawn.
 if kind == "phone":
     W, H, sw, sh, draw_h, radius = 868, 1344, 1080, 2420, 1180, 46
 else:
     W, H, sw, sh, draw_h, radius = 1120, 1188, 2172, 2352, 1020, 40
+if height:
+    draw_h = round(height * 0.86 / 2) * 2
+    H = height
+    W = round(sw * draw_h / sh / 2) * 2 + 2 * 60
 scale = draw_h / sh
 w, h = round(sw * scale), draw_h
 x, y = (W - w) // 2, (H - h) // 2
