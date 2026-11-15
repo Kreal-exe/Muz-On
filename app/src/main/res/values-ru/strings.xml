@@ -1,5 +1,22 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="select">Выбрать</string>
+    <string name="sel_count">Выбрано: %1$d</string>
+    <string name="sel_all">Выбрать все</string>
+    <string name="sel_none">Снять выбор</string>
+    <string name="add_songs">Добавить песни</string>
+    <string name="add_count">Добавить %1$d</string>
+    <string name="add_to_title">Добавить в «%1$s»</string>
+    <string name="move_to_playlist">Перенести в плейлист</string>
+    <string name="move_top">В начало</string>
+    <string name="move_bottom">В конец</string>
+    <string name="remove">Убрать</string>
+    <string name="filter_hint">Поиск в списке</string>
+    <string name="pending_sync">Ждёт синхронизации с компьютером</string>
+    <string name="smart_note">Смарт-плейлист: песни подбирают его правила в Музыке</string>
+    <string name="s_sync">Изменения для компьютера</string>
+    <string name="s_sync_none">Всё совпадает с Музыкой или iTunes</string>
+    <string name="s_sync_pending">Ждут: %1$d. Подключите телефон и запустите tools/sync-library.sh на Mac или tools\\windows\\sync-library.cmd на Windows</string>
     <string name="home">Главная</string>
     <string name="place_playlists">Плейлисты</string>
     <string name="place_artists">Артисты</string>
@@ -124,7 +141,7 @@
     <string name="playlist_rename">Переименовать</string>
     <string name="playlist_delete">Удалить плейлист</string>
     <string name="playlist_delete_confirm">Удалить «%1$s»? Песни останутся в библиотеке.</string>
-    <string name="playlist_empty">Пока пусто. Добавляйте песни через ⋮ → «Добавить в плейлист».</string>
+    <string name="playlist_empty">Пока пусто. Нажмите «Добавить песни» или добавляйте из меню ⋮ любой песни.</string>
     <string name="menu_add_playlist">Добавить в плейлист</string>
     <string name="menu_remove_playlist">Убрать из плейлиста</string>
     <string name="sort_own">Как добавлены</string>

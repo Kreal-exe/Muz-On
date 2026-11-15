@@ -36,6 +36,7 @@ sealed class Route(val key: String) {
     data object MostPlayedRoute : Route("mostPlayed")
     data class FolderRoute(val path: String) : Route("folder:$path")
     data object SearchRoute : Route("search")
+    data class AddSongsRoute(val playlistId: String) : Route("addSongs:$playlistId")
     data object SettingsRoute : Route("settings")
 }
 
@@ -165,11 +166,10 @@ class Navigator {
         job = scope.launch { animate(progress, 1f, animationSpec = pageSpring) { v, _ -> progress = v } }
     }
 
-    // The page leaves first; only on the next frame is the stack at rest again. Doing both at once let
-    // the leaving page show for a frame at full width before it was gone.
-    private suspend fun finishPop() {
+    // The page leaves and the stack comes to rest in one step: pages place themselves by the live stack
+    // when drawn (see StackHost), so no frame shows a page where it no longer belongs.
+    private fun finishPop() {
         if (stack.size > 1) drop(tab, stack)
-        withFrameNanos { }
         progress = 1f
     }
 }
@@ -189,26 +189,31 @@ fun StackHost(
         val shown = stack.takeLast(2)
         // Only the tab on show moves; a neighbour seen during a swipe is at rest.
         val progress = { if (tab == nav.tab) nav.progress else 1f }
-        shown.forEachIndexed { index, route ->
-            val isTop = index == shown.lastIndex
-            val hasBelow = shown.size == 2
+        shown.forEach { route ->
             key(route.key) {
                 holder.SaveableStateProvider("$tab/${route.key}") {
                     Box(
                         Modifier
                             .fillMaxSize()
                             .graphicsLayer {
+                                // Read from the live stack, not from the last composition: right after a
+                                // pop the page below becomes the top before the pages are composed again,
+                                // and placing it by its old slot drew it off screen for a frame, with the
+                                // tab's first page showing through.
                                 val p = progress()
+                                val live = nav.stackOf(tab)
+                                val at = live.lastIndexOf(route)
                                 when {
-                                    !hasBelow -> {
-                                        translationX = 0f
+                                    at < 0 -> alpha = 0f // just left the stack
+                                    at == live.lastIndex -> {
+                                        translationX = if (live.size > 1) (1f - p) * width else 0f
                                         alpha = 1f
                                     }
-                                    isTop -> translationX = (1f - p) * width
-                                    else -> {
+                                    at == live.lastIndex - 1 -> {
                                         translationX = -0.25f * p * width
                                         alpha = if (p >= 1f) 0f else 1f
                                     }
+                                    else -> alpha = 0f
                                 }
                             }
                             .background(background)

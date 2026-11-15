@@ -9,7 +9,7 @@ def inside(x,y):
         yy=min(max(y,y0),y1)
         if (x-cx)**2+(y-yy)**2<=16: return True
     return False
-bg=(0xE8,0x54,0x2E)
+bg=(0x7B,0x4F,0xF2)  # the icon's violet; the real icon is drawn by tools/icon/make_icons.m
 rows=[]
 for py in range(N):
     row=bytearray([0])

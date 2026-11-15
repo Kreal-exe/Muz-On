@@ -24,6 +24,8 @@ import dev.kreal.muzon.data.Prefs
 import dev.kreal.muzon.data.Track
 
 /** The UI's view of the player. Every field follows the player's own events, never a guess. */
+private const val TICK_MS = 5_000L
+
 class PlayerConnection(private val context: Context, private val prefs: Prefs, private val localPlayer: () -> Player?) {
     private var controller: MediaController? = null
     private var connecting = false
@@ -62,7 +64,10 @@ class PlayerConnection(private val context: Context, private val prefs: Prefs, p
 
     private val listener = object : Player.Listener {
         override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
-            if (reason != Player.MEDIA_ITEM_TRANSITION_REASON_PLAYLIST_CHANGED) mediaItem?.mediaId?.let(prefs::recordPlay)
+            // A play counts once the song has been heard for a while: skipping through ten songs
+            // must not add ten plays to Most played and History.
+            heardId = mediaItem?.mediaId
+            heardMs = 0L
         }
 
         override fun onEvents(player: Player, events: Player.Events) {
@@ -76,7 +81,34 @@ class PlayerConnection(private val context: Context, private val prefs: Prefs, p
             }
             if (events.contains(Player.EVENT_MEDIA_ITEM_TRANSITION) || events.contains(Player.EVENT_IS_PLAYING_CHANGED)) {
                 prefs.savePosition(player.currentMediaItemIndex, player.currentPosition)
+                main.removeCallbacks(tick)
+                if (player.isPlaying) main.postDelayed(tick, TICK_MS)
             }
+        }
+    }
+
+    private var heardId: String? = null
+    private var heardMs = 0L
+
+    /**
+     * Every few seconds while playing: counts the song as played once it has been heard for half its
+     * length or 30 seconds, and saves the position, so a phone that kills the app resumes close by.
+     */
+    private val tick: Runnable = object : Runnable {
+        override fun run() {
+            val p = localPlayer() ?: controller ?: return
+            if (!p.isPlaying) return
+            prefs.savePosition(p.currentMediaItemIndex, p.currentPosition)
+            val id = heardId
+            if (id != null && id == p.currentMediaItem?.mediaId) {
+                heardMs += TICK_MS
+                val length = p.duration.takeIf { it > 0 } ?: Long.MAX_VALUE
+                if (heardMs >= minOf(30_000L, length / 2)) {
+                    prefs.recordPlay(id)
+                    heardId = null
+                }
+            }
+            main.postDelayed(this, TICK_MS)
         }
     }
 
@@ -126,7 +158,7 @@ class PlayerConnection(private val context: Context, private val prefs: Prefs, p
         val player: Player = localPlayer() ?: c?.takeIf { it.isConnected } ?: return
         if (player.mediaItemCount == 0) return
         if (queue.size != player.mediaItemCount) {
-            library?.let { lib -> queue = (0 until player.mediaItemCount).mapNotNull { lib.byId[player.getMediaItemAt(it).mediaId] } }
+            library?.let { lib -> queue = (0 until player.mediaItemCount).map { trackOf(lib, player.getMediaItemAt(it)) } }
         }
         sync(player)
     }
@@ -137,7 +169,7 @@ class PlayerConnection(private val context: Context, private val prefs: Prefs, p
     private fun adoptOrRestore(c: MediaController) {
         val lib = library ?: return
         if (c.mediaItemCount > 0) {
-            queue = (0 until c.mediaItemCount).mapNotNull { lib.byId[c.getMediaItemAt(it).mediaId] }
+            queue = (0 until c.mediaItemCount).map { trackOf(lib, c.getMediaItemAt(it)) }
             sync(c)
             return
         }
@@ -182,6 +214,28 @@ class PlayerConnection(private val context: Context, private val prefs: Prefs, p
             i = timeline.getNextWindowIndex(i, Player.REPEAT_MODE_OFF, shuffled)
         }
         return out
+    }
+
+    /**
+     * The track a queue entry plays. One the library no longer lists (filtered out by a setting,
+     * renamed by a sync) is rebuilt from the entry itself, so queue rows keep matching what plays.
+     */
+    private fun trackOf(lib: Library, item: MediaItem): Track = lib.byId[item.mediaId] ?: item.mediaMetadata.let { m ->
+        Track(
+            id = item.mediaId,
+            title = m.title?.toString().orEmpty(),
+            artist = m.artist?.toString().orEmpty(),
+            albumArtist = m.albumArtist?.toString().orEmpty(),
+            album = m.albumTitle?.toString().orEmpty(),
+            genre = "",
+            trackNumber = 0,
+            discNumber = 0,
+            year = 0,
+            durationMs = 0L,
+            dateAddedMs = 0L,
+            sourcePath = "",
+            uri = item.localConfiguration?.uri?.toString(),
+        )
     }
 
     private fun toItem(t: Track): MediaItem = MediaItem.Builder()

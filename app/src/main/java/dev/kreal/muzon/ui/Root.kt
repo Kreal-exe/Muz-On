@@ -146,14 +146,14 @@ private fun Welcome(title: String, text: String, button: String, skip: String? =
         Modifier.fillMaxSize().padding(horizontal = 16.dp, vertical = 48.dp),
         verticalArrangement = Arrangement.Center,
     ) {
-        Column(Modifier.fillMaxWidth().block(Blocks.Orange, theme, 22.dp).padding(20.dp)) {
+        Column(Modifier.fillMaxWidth().block(Blocks.Brand, theme, 22.dp).padding(20.dp)) {
             Txt(title, Type.hero, Color.White, maxLines = 3)
             Spacer(Modifier.height(10.dp))
             Txt(text, Type.body, Color.White, maxLines = 8)
             Spacer(Modifier.height(18.dp))
             Box(
                 Modifier.block(Color.White, theme, 20.dp).clickable(onClick = onClick).padding(horizontal = 20.dp, vertical = 11.dp),
-            ) { Txt(button, Type.bodyBold, Blocks.Orange) }
+            ) { Txt(button, Type.bodyBold, Blocks.Brand) }
         }
         if (skip != null) {
             Spacer(Modifier.height(10.dp))
@@ -203,7 +203,11 @@ private fun CompactShell(vm: AppViewModel, library: Library) {
     val bottom = maxOf(WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding(), 14.dp)
     val tabsHeight = 64.dp + bottom
     val hasTrack = vm.connection.current != null
-    val space = tabsHeight + if (hasTrack) 66.dp else 6.dp
+    val picking = vm.selection != null
+    val space = tabsHeight + (if (hasTrack) 66.dp else 6.dp) + if (picking) SELECTION_EXTRA else 0.dp
+    // Picking belongs to one page: it ends when another page or tab comes up.
+    val top = vm.nav.stack.lastOrNull()
+    LaunchedEffect(top) { if (vm.selection != null && vm.selection?.route != top) vm.selection = null }
 
     BackHandling(vm)
     Box(Modifier.fillMaxSize()) {
@@ -221,7 +225,25 @@ private fun CompactShell(vm: AppViewModel, library: Library) {
             )
         }
         CompactPlayer(vm, tabsHeight)
-        vm.addToPlaylist?.let { tracks -> AddToPlaylistDialog(vm, tracks) { vm.addToPlaylist = null } }
+        if (picking) {
+            SelectionBar(
+                vm,
+                Modifier
+                    .align(Alignment.BottomCenter)
+                    .fillMaxWidth()
+                    .zIndex(2f)
+                    .background(p.surface)
+                    .pointerInput(Unit) { }
+                    .padding(bottom = bottom)
+                    .height(64.dp + SELECTION_EXTRA),
+            )
+        }
+        vm.addToPlaylist?.let { tracks ->
+            AddToPlaylistDialog(vm, tracks, moveFrom = vm.movingFrom) {
+                vm.addToPlaylist = null
+                vm.movingFrom = null
+            }
+        }
         vm.renamingPlaylist?.let { pl ->
             PlaylistNameDialog(stringResource(R.string.playlist_rename), pl.name, stringResource(R.string.done), { vm.renamingPlaylist = null }) { name ->
                 vm.renamingPlaylist = null
@@ -449,9 +471,9 @@ private fun TabItem(vm: AppViewModel, tab: Tab, theme: AppTheme, p: Palette, mod
 }
 
 private fun tabColor(tab: Tab) = when (tab) {
-    Tab.Home -> Color(0xFFFF8A5C)
-    Tab.Playlists -> Blocks.Orange
-    Tab.Artists -> Color(0xFF8F6DFF)
+    Tab.Home -> Color(0xFFA98BFF)
+    Tab.Playlists -> Blocks.Brand
+    Tab.Artists -> Color(0xFFFF8A5C)
     Tab.Albums -> Color(0xFFA9D21E)
     Tab.Songs -> Blocks.Pink
 }

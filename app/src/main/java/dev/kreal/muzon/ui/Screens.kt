@@ -99,6 +99,8 @@ import dev.kreal.muzon.data.PlaylistSort
 import dev.kreal.muzon.data.Sorting
 import dev.kreal.muzon.data.TileSize
 import dev.kreal.muzon.data.Track
+import dev.kreal.muzon.data.Search
+import sh.calvin.reorderable.ReorderableItem
 
 /** Space the shell keeps at the bottom of every list: tabs and mini player, or just the system bar. */
 val LocalBottomSpace = compositionLocalOf { 0.dp }
@@ -114,20 +116,27 @@ fun RouteContent(route: Route, vm: AppViewModel, library: Library) {
             Tab.Playlists -> PlaylistsScreen(vm, library)
             Tab.Artists -> ArtistsScreen(vm, library)
             Tab.Albums -> AlbumsScreen(vm, library)
-            Tab.Songs -> SongsScreen(vm, stringResource(R.string.place_songs), library.songs, true)
+            Tab.Songs -> SongsScreen(vm, library, route, stringResource(R.string.place_songs), library.songs, true)
         }
-        is Route.PlaylistRoute -> library.playlists.firstOrNull { it.id == route.id }?.let { PlaylistScreen(vm, library, it) }
-        is Route.ArtistRoute -> library.artistsByKey[route.artistKey]?.let { ArtistScreen(vm, it) }
-        is Route.AlbumRoute -> library.albumsByKey[route.albumKey]?.let { AlbumScreen(vm, it) }
-        is Route.GenreRoute -> library.genres.firstOrNull { it.first == route.name }?.let { SongsScreen(vm, it.first, it.second, false) }
-        Route.RecentRoute -> SongsScreen(vm, stringResource(R.string.place_recent), library.recentlyAdded(vm.prefs.recentDays), false)
+        // A playlist deleted here or on the computer closes its page rather than leave it blank.
+        is Route.PlaylistRoute -> library.playlist(route.id)?.let { PlaylistScreen(vm, library, route, it) } ?: LeaveMissing(vm, route)
+        is Route.AddSongsRoute -> library.playlist(route.playlistId)?.let { AddSongsScreen(vm, library, it) } ?: LeaveMissing(vm, route)
+        is Route.ArtistRoute -> library.artistsByKey[route.artistKey]?.let { ArtistScreen(vm, library, route, it) }
+        is Route.AlbumRoute -> library.albumsByKey[route.albumKey]?.let { AlbumScreen(vm, route, it) }
+        is Route.GenreRoute -> library.genres.firstOrNull { it.first == route.name }?.let { SongsScreen(vm, library, route, it.first, it.second, false) }
+        Route.RecentRoute -> SongsScreen(vm, library, route, stringResource(R.string.place_recent), library.recentlyAdded(vm.prefs.recentDays), false)
         Route.GenresRoute -> GenresScreen(vm, library)
-        Route.HistoryRoute -> SongsScreen(vm, stringResource(R.string.place_history), vm.historyTracks(library), false)
-        Route.MostPlayedRoute -> SongsScreen(vm, stringResource(R.string.place_most), vm.mostPlayed(library), false)
-        is Route.FolderRoute -> FolderScreen(vm, library, route.path)
+        Route.HistoryRoute -> SongsScreen(vm, library, route, stringResource(R.string.place_history), vm.historyTracks(library), false)
+        Route.MostPlayedRoute -> SongsScreen(vm, library, route, stringResource(R.string.place_most), vm.mostPlayed(library), false)
+        is Route.FolderRoute -> FolderScreen(vm, library, route)
         Route.SearchRoute -> SearchScreen(vm, library)
         Route.SettingsRoute -> SettingsScreen(vm, library)
     }
+}
+
+@Composable
+private fun LeaveMissing(vm: AppViewModel, route: Route) {
+    LaunchedEffect(route) { if (vm.nav.stack.lastOrNull() == route) vm.nav.pop() }
 }
 
 private fun Place.glyph() = when (this) {
@@ -235,6 +244,8 @@ private fun HomeScreen(vm: AppViewModel, library: Library) {
     var moving by remember { mutableStateOf(false) }
     var query by rememberSaveable { mutableStateOf("") }
     val q = query.trim().lowercase()
+    val found = remember(q, library) { searchAll(library, q) }
+    SelectionPool(vm, Route.Root(Tab.Home), found.songs)
     // Back empties the search and puts the keyboard away with it.
     val focusManager = androidx.compose.ui.platform.LocalFocusManager.current
     androidx.activity.compose.BackHandler(enabled = query.isNotEmpty()) {
@@ -258,7 +269,7 @@ private fun HomeScreen(vm: AppViewModel, library: Library) {
             SearchField(query, { query = it })
         }
         if (q.isNotEmpty()) {
-            searchResults(vm, library, q)
+            searchResults(vm, library, found)
             return@LazyVerticalGrid
         }
         item(key = "places", span = { GridItemSpan(maxLineSpan) }, contentType = "places") {
@@ -515,7 +526,7 @@ private fun PlaceTile(vm: AppViewModel, library: Library, place: Place, theme: A
 private fun Library.thumbsOf(place: Place, vm: AppViewModel): List<Track> = when (place) {
     Place.History -> vm.historyTracks(this).distinctBy { it.albumKey }
     Place.MostPlayed -> vm.mostPlayed(this).distinctBy { it.albumKey }
-    Place.Folders -> subfolders("").mapNotNull { (f, _) -> folders.entries.firstOrNull { it.key.startsWith(f) }?.value?.firstOrNull() }
+    Place.Folders -> subfolders("").mapNotNull { (f, _) -> folders.entries.firstOrNull { it.key == f || it.key.startsWith("$f/") }?.value?.firstOrNull() }
     Place.Playlists -> playlists.mapNotNull { tracksOf(it).firstOrNull() }
     Place.Artists -> artists.mapNotNull { it.tracks.firstOrNull() }
     Place.Albums -> albums.map { it.tracks.first() }
@@ -609,7 +620,7 @@ private fun NoLibraryCard(vm: AppViewModel) {
 }
 
 @Composable
-private fun SearchField(query: String, onChange: (String) -> Unit) {
+private fun SearchField(query: String, onChange: (String) -> Unit, hint: String? = null) {
     val p = LocalPalette.current
     // Coming back to the app must not land in the search field with the keyboard up: the window
     // would otherwise give the field back the focus it had when the app was left.
@@ -623,7 +634,7 @@ private fun SearchField(query: String, onChange: (String) -> Unit) {
         Icon(Icons.Rounded.Search, null, tint = p.muted, modifier = Modifier.size(20.dp))
         Spacer(Modifier.width(8.dp))
         Box(Modifier.weight(1f)) {
-            if (query.isEmpty()) Txt(stringResource(R.string.search_hint), Type.body, p.muted)
+            if (query.isEmpty()) Txt(hint ?: stringResource(R.string.search_hint), Type.body, p.muted)
             BasicTextField(
                 query,
                 onChange,
@@ -640,11 +651,11 @@ private fun SearchField(query: String, onChange: (String) -> Unit) {
 }
 
 /** Results in place of the home sections while something is typed in the search field. */
-private fun androidx.compose.foundation.lazy.grid.LazyGridScope.searchResults(vm: AppViewModel, library: Library, q: String) {
-    val artists = library.artists.filter { it.name.lowercase().contains(q) }
-    val albums = library.albums.filter { it.title.lowercase().contains(q) || it.artist.lowercase().contains(q) }.take(30)
-    val songs = library.songs.filter { it.title.lowercase().contains(q) || it.artist.lowercase().contains(q) || it.album.lowercase().contains(q) }.take(200)
-    items(artists, key = { "sa:${it.key}" }, span = { GridItemSpan(maxLineSpan) }) { artist ->
+private fun androidx.compose.foundation.lazy.grid.LazyGridScope.searchResults(vm: AppViewModel, library: Library, found: Found) {
+    items(found.playlists, key = { "sp:${it.id}" }, span = { GridItemSpan(maxLineSpan) }) { playlist ->
+        PlaylistResult(vm, library, playlist)
+    }
+    items(found.artists, key = { "sa:${it.key}" }, span = { GridItemSpan(maxLineSpan) }) { artist ->
         val p = LocalPalette.current
         Row(
             Modifier.fillMaxWidth().clip(Radius8).combinedClickable(onClick = { vm.nav.push(Route.ArtistRoute(artist.key)) }, onLongClick = { vm.collectionMenu = artist.tracks }).padding(vertical = 4.dp),
@@ -658,29 +669,102 @@ private fun androidx.compose.foundation.lazy.grid.LazyGridScope.searchResults(vm
             }
         }
     }
-    items(albums, key = { "sb:${it.key}" }, contentType = { "cover" }) { album ->
+    items(found.albums, key = { "sb:${it.key}" }, contentType = { "cover" }) { album ->
         CoverCell(album.title, album.artist, { TrackArt(album.tracks.first(), Modifier.fillMaxSize(), Radius8) }, vm, album.tracks) {
             vm.nav.push(Route.AlbumRoute(album.key))
         }
     }
+    val songs = found.songs
     items(songs.size, key = { "ss:${songs[it].id}" }, span = { GridItemSpan(maxLineSpan) }) { i ->
-        val conn = vm.connection
-        Box(Modifier.padding(horizontal = 0.dp)) {
-            TrackRow(songs[i], conn.current?.id == songs[i].id, conn.wantsToPlay, menu = { o, set -> TrackMenu(vm, songs[i], LocalPalette.current.muted, open = o, setOpen = set) }) { conn.play(songs, i) }
+        PickableRow(vm, Route.Root(Tab.Home), songs, i)
+    }
+    if (found.isEmpty) {
+        item(span = { GridItemSpan(maxLineSpan) }) { Txt(stringResource(R.string.results_none), Type.body, LocalPalette.current.muted, Modifier.padding(16.dp)) }
+    }
+}
+
+/** What a search finds, every kind of thing in the library. */
+private class Found(val playlists: List<Playlist>, val artists: List<dev.kreal.muzon.data.Artist>, val albums: List<Album>, val songs: List<Track>) {
+    val isEmpty get() = playlists.isEmpty() && artists.isEmpty() && albums.isEmpty() && songs.isEmpty()
+}
+
+private fun searchAll(library: Library, q: String): Found {
+    if (Search.words(q).isEmpty()) return Found(emptyList(), emptyList(), emptyList(), emptyList())
+    return Found(
+        playlists = Search.filter(library.playlists, q) { Search.normalize(it.name) }.take(20),
+        artists = Search.filter(library.artists, q) { Search.normalize(it.name) }.take(30),
+        albums = Search.filter(library.albums, q) { Search.normalize(it.title + " " + it.artist) }.take(30),
+        songs = Search.tracks(library, library.songs, q).take(300),
+    )
+}
+
+@Composable
+private fun PlaylistResult(vm: AppViewModel, library: Library, playlist: Playlist) {
+    val p = LocalPalette.current
+    val tracks = remember(playlist, library) { library.tracksOf(playlist) }
+    Row(
+        Modifier.fillMaxWidth().clip(Radius8).combinedClickable(onClick = { vm.nav.push(Route.PlaylistRoute(playlist.id)) }, onLongClick = {
+            vm.collectionPlaylist = playlist
+            vm.collectionMenu = tracks
+        }).padding(vertical = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Mosaic(tracks, Modifier.size(42.dp), 6.dp)
+        Spacer(Modifier.width(11.dp))
+        Column {
+            Txt(playlist.name, Type.bodyBold)
+            Txt(stringResource(R.string.place_playlists) + " · " + pluralStringResource(R.plurals.songs, tracks.size, tracks.size), Type.small, p.muted)
         }
     }
-    if (artists.isEmpty() && albums.isEmpty() && songs.isEmpty()) {
-        item(span = { GridItemSpan(maxLineSpan) }) { Txt("—", Type.body, modifier = Modifier.padding(16.dp)) }
+}
+
+/**
+ * A song on a page where several can be picked: a long press starts picking, then taps pick and
+ * unpick. [list] is the page's list in its order; [playlist] is the playlist whose page this is.
+ */
+@Composable
+fun PickableRow(vm: AppViewModel, route: Route, list: List<Track>, i: Int, playlist: Playlist? = null, number: Int? = null, trailing: (@Composable () -> Unit)? = null) {
+    val conn = vm.connection
+    val track = list[i]
+    val selection = vm.selection?.takeIf { it.route == route }
+    TrackRow(
+        track, conn.current?.id == track.id, conn.wantsToPlay, number = number,
+        menu = { o, set -> TrackMenu(vm, track, LocalPalette.current.muted, open = o, setOpen = set, ownPlaylist = playlist?.takeIf { it.editable }?.id) },
+        selected = selection?.let { track.id in it.ids },
+        onLongClick = {
+            val current = vm.selection?.takeIf { it.route == route }
+            if (current != null) current.toggle(track.id) else vm.selection = Selection(route, playlist).also {
+                it.pool = list
+                it.ids.add(track.id)
+            }
+        },
+        trailing = if (selection != null) trailing else null,
+    ) {
+        if (selection != null) selection.toggle(track.id) else conn.play(list, i)
     }
+}
+
+/** Keeps the picking on [route] in step with what the page shows. */
+@Composable
+private fun SelectionPool(vm: AppViewModel, route: Route, list: List<Track>) {
+    androidx.compose.runtime.SideEffect { vm.selection?.takeIf { it.route == route }?.pool = list }
+}
+
+/** A search field over one list, which filters it as you type. */
+@Composable
+private fun ListFilter(query: String, onChange: (String) -> Unit, modifier: Modifier = Modifier) {
+    Box(modifier.padding(horizontal = 12.dp, vertical = 4.dp)) { SearchField(query, onChange, stringResource(R.string.filter_hint)) }
 }
 
 /** The music folder as it is on the phone: subfolders first, then the files in this one. */
 @Composable
-private fun FolderScreen(vm: AppViewModel, library: Library, path: String) {
+private fun FolderScreen(vm: AppViewModel, library: Library, route: Route.FolderRoute) {
+    val path = route.path
     val p = LocalPalette.current
     val conn = vm.connection
     val subfolders = remember(library, path) { library.subfolders(path) }
     val tracks = remember(library, path) { library.folders[path].orEmpty() }
+    SelectionPool(vm, route, tracks)
     LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(top = statusTop() + 2.dp, bottom = LocalBottomSpace.current + 10.dp)) {
         item { PageBar(vm, p.text, if (path.isEmpty()) stringResource(R.string.place_folders) else path.substringAfterLast('/')) }
         items(subfolders, key = { "f:${it.first}" }) { (folder, count) ->
@@ -701,8 +785,8 @@ private fun FolderScreen(vm: AppViewModel, library: Library, path: String) {
         if (tracks.isNotEmpty()) {
             item { PlayButtons(p.accent, Modifier.padding(14.dp, 8.dp), { conn.play(tracks) }, { conn.play(tracks, shuffled = true) }) }
         }
-        itemsIndexed(tracks, key = { _, it -> it.id }, contentType = { _, _ -> "track" }) { i, track ->
-            TrackRow(track, conn.current?.id == track.id, conn.wantsToPlay, menu = { o, set -> TrackMenu(vm, track, p.muted, open = o, setOpen = set) }) { conn.play(tracks, i) }
+        itemsIndexed(tracks, key = { _, it -> it.id }, contentType = { _, _ -> "track" }) { i, _ ->
+            PickableRow(vm, route, tracks, i)
         }
     }
 }
@@ -720,6 +804,8 @@ private fun PlaylistsScreen(vm: AppViewModel, library: Library) {
     val theme = LocalAppTheme.current
     val list = rememberLazyListState()
     ScrollToTopOnTap(vm, Tab.Playlists) { list.glideToTop() }
+    var filter by rememberSaveable { mutableStateOf("") }
+    val shown = remember(library, filter) { Search.filter(library.playlists, filter) { Search.normalize(it.name) } }
     LazyColumn(
         Modifier.fillMaxSize(),
         state = list,
@@ -735,11 +821,12 @@ private fun PlaylistsScreen(vm: AppViewModel, library: Library) {
             if (naming) {
                 PlaylistNameDialog(stringResource(R.string.playlist_new), "", stringResource(R.string.create), { naming = false }) { name ->
                     naming = false
-                    vm.createPlaylist(name, emptyList(), open = true)
+                    vm.createPlaylist(name, emptyList(), open = true, addSongs = true)
                 }
             }
         }
-        itemsIndexed(library.playlists, key = { _, it -> it.id }) { i, playlist ->
+        if (library.playlists.size > 6) item(key = "filter") { ListFilter(filter, { filter = it }) }
+        itemsIndexed(shown, key = { _, it -> it.id }) { i, playlist ->
             val color = Blocks.forIndex(i)
             val on = Blocks.on(color)
             val tracks = remember(playlist) { library.tracksOf(playlist) }
@@ -759,7 +846,10 @@ private fun PlaylistsScreen(vm: AppViewModel, library: Library) {
                 Spacer(Modifier.width(12.dp))
                 Column(Modifier.weight(1f)) {
                     Txt(playlist.name, Type.tile.copy(fontSize = androidx.compose.ui.unit.TextUnit(15f, androidx.compose.ui.unit.TextUnitType.Sp)), on)
-                    Txt(pluralStringResource(R.plurals.songs, tracks.size, tracks.size), Type.small, on)
+                    Txt(
+                        pluralStringResource(R.plurals.songs, tracks.size, tracks.size) + if (playlist.pending) " · ⟳" else "",
+                        Type.small, on,
+                    )
                 }
             }
         }
@@ -775,11 +865,14 @@ private fun ArtistsScreen(vm: AppViewModel, library: Library) {
     val p = LocalPalette.current
     val state = rememberLazyListState()
     ScrollToTopOnTap(vm, Tab.Artists) { state.glideToTop() }
-    val letters = remember(library) { lettersOf(library.artists.map { it.name }) }
+    var filter by rememberSaveable { mutableStateOf("") }
+    val artists = remember(library, filter) { Search.filter(library.artists, filter) { Search.normalize(it.name) } }
+    val letters = remember(artists, filter) { if (filter.isBlank()) lettersOf(artists.map { it.name }) else emptyList() }
     Box(Modifier.fillMaxSize()) {
         LazyColumn(state = state, modifier = Modifier.fillMaxSize(), contentPadding = PaddingValues(end = 18.dp, top = statusTop() + 4.dp, bottom = LocalBottomSpace.current + 10.dp)) {
             item { RootTitle(stringResource(R.string.place_artists)) }
-            items(library.artists, key = { it.key }) { artist ->
+            item(key = "filter") { ListFilter(filter, { filter = it }) }
+            items(artists, key = { it.key }) { artist ->
                 Row(
                     Modifier.fillMaxWidth().combinedClickable(onClick = { vm.nav.push(Route.ArtistRoute(artist.key)) }, onLongClick = { vm.collectionMenu = artist.tracks }).padding(horizontal = 14.dp, vertical = 6.dp),
                     verticalAlignment = Alignment.CenterVertically,
@@ -798,7 +891,7 @@ private fun ArtistsScreen(vm: AppViewModel, library: Library) {
                 }
             }
         }
-        LetterRail(letters, state, 1, Modifier.align(Alignment.CenterEnd).padding(top = statusTop(), bottom = LocalBottomSpace.current))
+        LetterRail(letters, state, 2, Modifier.align(Alignment.CenterEnd).padding(top = statusTop(), bottom = LocalBottomSpace.current))
     }
 }
 
@@ -807,6 +900,8 @@ private fun AlbumsScreen(vm: AppViewModel, library: Library) {
     val columns = vm.prefs.albumColumns
     val grid = androidx.compose.foundation.lazy.grid.rememberLazyGridState()
     ScrollToTopOnTap(vm, Tab.Albums) { grid.glideToTop() }
+    var filter by rememberSaveable { mutableStateOf("") }
+    val albums = remember(library, filter) { Search.filter(library.albums, filter) { Search.normalize(it.title + " " + it.artist) } }
     LazyVerticalGrid(
         state = grid,
         columns = if (columns > 0) GridCells.Fixed(columns) else GridCells.Adaptive(104.dp),
@@ -816,7 +911,8 @@ private fun AlbumsScreen(vm: AppViewModel, library: Library) {
         verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
         item(span = { GridItemSpan(maxLineSpan) }) { RootTitle(stringResource(R.string.place_albums)) }
-        items(library.albums, key = { it.key }, contentType = { "cover" }) { album ->
+        item(span = { GridItemSpan(maxLineSpan) }, key = "filter") { ListFilter(filter, { filter = it }) }
+        items(albums, key = { it.key }, contentType = { "cover" }) { album ->
             CoverCell(album.title, album.artist, { TrackArt(album.tracks.first(), Modifier.fillMaxSize(), Radius8) }, vm, album.tracks) {
                 vm.nav.push(Route.AlbumRoute(album.key))
             }
@@ -861,7 +957,7 @@ private fun PageBar(vm: AppViewModel, tint: Color, title: String? = null, traili
 }
 
 @Composable
-private fun SongsScreen(vm: AppViewModel, title: String, base: List<Track>, isRoot: Boolean) {
+private fun SongsScreen(vm: AppViewModel, library: Library, route: Route, title: String, base: List<Track>, isRoot: Boolean) {
     val state = rememberLazyListState()
     val conn = vm.connection
     val p = LocalPalette.current
@@ -870,11 +966,14 @@ private fun SongsScreen(vm: AppViewModel, title: String, base: List<Track>, isRo
     val saved = remember(sortKey) { vm.prefs.sortOf(sortKey) }
     var mode by remember(sortKey) { mutableStateOf(saved.first) }
     var reversed by remember(sortKey) { mutableStateOf(saved.second) }
-    val tracks = remember(base, mode, reversed) { Sorting.apply(mode, reversed, base) }
+    var filter by rememberSaveable { mutableStateOf("") }
+    val sorted = remember(base, mode, reversed) { Sorting.apply(mode, reversed, base) }
+    val tracks = remember(sorted, filter, library) { Search.filter(sorted, filter) { library.searchText(it) } }
+    SelectionPool(vm, route, tracks)
     // Letters only make sense while the list goes by title.
     val byTitle = mode == PlaylistSort.Title || (isRoot && mode == PlaylistSort.AsInMusic)
     if (isRoot) ScrollToTopOnTap(vm, Tab.Songs) { state.glideToTop() }
-    val letters = remember(tracks, isRoot, byTitle, reversed) { if (isRoot && byTitle && !reversed) lettersOf(tracks.map { it.title }) else emptyList() }
+    val letters = remember(tracks, isRoot, byTitle, reversed, filter) { if (isRoot && byTitle && !reversed && filter.isBlank()) lettersOf(tracks.map { it.title }) else emptyList() }
     Box(Modifier.fillMaxSize()) {
         LazyColumn(
             state = state,
@@ -891,6 +990,7 @@ private fun SongsScreen(vm: AppViewModel, title: String, base: List<Track>, isRo
                     PageBar(vm, p.text, title) { CollectionMenuButton(vm, tracks, p.text) }
                 }
             }
+            item(key = "filter") { ListFilter(filter, { filter = it }) }
             item {
                 Txt(
                     pluralStringResource(R.plurals.songs, tracks.size, tracks.size) + " · " + stringResource(R.string.hours_short, formatHours(tracks)),
@@ -910,11 +1010,11 @@ private fun SongsScreen(vm: AppViewModel, title: String, base: List<Track>, isRo
                     }
                 }
             }
-            itemsIndexed(tracks, key = { _, it -> it.id }, contentType = { _, _ -> "track" }) { i, track ->
-                TrackRow(track, conn.current?.id == track.id, conn.wantsToPlay, menu = { o, set -> TrackMenu(vm, track, LocalPalette.current.muted, open = o, setOpen = set) }) { conn.play(tracks, i) }
+            itemsIndexed(tracks, key = { _, it -> it.id }, contentType = { _, _ -> "track" }) { i, _ ->
+                PickableRow(vm, route, tracks, i)
             }
         }
-        LetterRail(letters, state, 3, Modifier.align(Alignment.CenterEnd).padding(top = statusTop(), bottom = LocalBottomSpace.current))
+        LetterRail(letters, state, 4, Modifier.align(Alignment.CenterEnd).padding(top = statusTop(), bottom = LocalBottomSpace.current))
     }
 }
 
@@ -1002,22 +1102,36 @@ private fun sortLabel(mode: PlaylistSort) = stringResource(
 )
 
 @Composable
-private fun PlaylistScreen(vm: AppViewModel, library: Library, playlist: Playlist) {
+private fun PlaylistScreen(vm: AppViewModel, library: Library, route: Route, playlist: Playlist) {
     val conn = vm.connection
+    val p = LocalPalette.current
     val index = library.playlists.indexOf(playlist)
     val color = Blocks.forIndex(index.coerceAtLeast(0))
     val on = Blocks.on(color)
-    val base = remember(playlist) { library.tracksOf(playlist) }
+    val base = remember(playlist, library) { library.tracksOf(playlist) }
     val saved = remember(playlist.id) { vm.prefs.sortOf(playlist.id) }
     var mode by remember(playlist.id) { mutableStateOf(saved.first) }
     var reversed by remember(playlist.id) { mutableStateOf(saved.second) }
-    val tracks = remember(base, mode, reversed) { Sorting.apply(mode, reversed, base) }
+    var filter by rememberSaveable { mutableStateOf("") }
+    val sorted = remember(base, mode, reversed) { Sorting.apply(mode, reversed, base) }
+    val tracks = remember(sorted, filter, library) { Search.filter(sorted, filter) { library.searchText(it) } }
+    SelectionPool(vm, route, tracks)
+    val picking = vm.selection?.route == route
+    // Songs are dragged into place while picking, in the playlist's own order and with no filter.
+    val canDrag = playlist.editable && picking && mode == PlaylistSort.AsInMusic && !reversed && filter.isBlank()
+    var order by remember(tracks) { mutableStateOf(tracks) }
     val state = rememberLazyListState()
+    val reorder = sh.calvin.reorderable.rememberReorderableLazyListState(state) { from, to ->
+        val f = order.indexOfFirst { it.id == from.key }
+        val t = order.indexOfFirst { it.id == to.key }
+        if (f >= 0 && t >= 0) order = order.toMutableList().apply { add(t, removeAt(f)) }
+    }
+    val shown = if (canDrag) order else tracks
     LazyColumn(state = state, modifier = Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = LocalBottomSpace.current + 10.dp)) {
         item(key = "head") {
             Column(Modifier.fillMaxWidth().block(color, LocalAppTheme.current, 0.dp).padding(top = statusTop(), bottom = 12.dp)) {
                 PageBar(vm, on) {
-                    if (playlist.own) OwnPlaylistMenu(vm, playlist, on)
+                    if (playlist.editable) EditPlaylistMenu(vm, playlist, on)
                     CollectionMenuButton(vm, tracks, on, playlist)
                     SortChip(mode, reversed, PlaylistSort.entries, on, Color.Black.copy(alpha = 0.18f), Modifier.padding(end = 10.dp), own = playlist.own) { m, r ->
                         mode = m
@@ -1036,58 +1150,132 @@ private fun PlaylistScreen(vm: AppViewModel, library: Library, playlist: Playlis
                             Type.small,
                             on,
                         )
+                        if (playlist.pending) Txt("⟳ " + stringResource(R.string.pending_sync), Type.tiny, on, maxLines = 2)
+                        else if (playlist.smart) Txt(stringResource(R.string.smart_note), Type.tiny, on, maxLines = 2)
                     }
                 }
-                PlayButtons(color, Modifier.padding(start = 14.dp, top = 10.dp), { conn.play(tracks) }, { conn.play(tracks, shuffled = true) }, inverted = true)
+                Row(Modifier.padding(start = 14.dp, top = 10.dp, end = 14.dp), verticalAlignment = Alignment.CenterVertically) {
+                    PlayButtons(color, Modifier.weight(1f), { conn.play(tracks) }, { conn.play(tracks, shuffled = true) }, inverted = true)
+                }
+                if (playlist.editable || tracks.isNotEmpty()) {
+                    Row(Modifier.padding(start = 14.dp, top = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        if (playlist.editable) HeaderChip(Icons.Rounded.Add, stringResource(R.string.add_songs), on) { vm.nav.push(Route.AddSongsRoute(playlist.id)) }
+                        if (tracks.isNotEmpty()) HeaderChip(Icons.Rounded.Check, stringResource(R.string.select), on) {
+                            vm.selection = if (picking) null else Selection(route, playlist).also { it.pool = tracks }
+                        }
+                    }
+                }
             }
         }
-        itemsIndexed(tracks, key = { _, it -> it.id }, contentType = { _, _ -> "track" }) { i, track ->
-            TrackRow(track, conn.current?.id == track.id, conn.wantsToPlay, menu = { o, set ->
-                TrackMenu(vm, track, LocalPalette.current.muted, open = o, setOpen = set, ownPlaylist = playlist.id.takeIf { playlist.own })
-            }) { conn.play(tracks, i) }
+        if (base.size > 8) item(key = "filter") { ListFilter(filter, { filter = it }, Modifier.padding(top = 6.dp)) }
+        itemsIndexed(shown, key = { _, it -> it.id }, contentType = { _, _ -> "track" }) { i, track ->
+            ReorderableItem(reorder, key = track.id, enabled = canDrag) { dragging ->
+                Box(Modifier.background(if (dragging) p.surfaceHigh else Color.Transparent)) {
+                    PickableRow(vm, route, shown, i, playlist, trailing = if (!canDrag) null else ({
+                        Icon(
+                            Icons.Rounded.DragHandle, stringResource(R.string.move_top), tint = p.muted,
+                            modifier = Modifier.padding(start = 6.dp).size(26.dp).draggableHandle(
+                                onDragStopped = { vm.reorderPlaylist(playlist.id, order.map { it.id }) },
+                            ),
+                        )
+                    }))
+                }
+            }
         }
-        if (playlist.own && base.isEmpty()) {
-            item { Txt(stringResource(R.string.playlist_empty), Type.body, LocalPalette.current.muted, Modifier.padding(20.dp), maxLines = 4) }
+        if (playlist.editable && base.isEmpty()) {
+            item {
+                Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Txt(stringResource(R.string.playlist_empty), Type.body, p.muted, maxLines = 4)
+                    Box(Modifier.clip(RoundedCornerShape(19.dp)).background(p.accent).clickable { vm.nav.push(Route.AddSongsRoute(playlist.id)) }.padding(horizontal = 16.dp, vertical = 9.dp)) {
+                        Txt("+ " + stringResource(R.string.add_songs), Type.bodyBold, Color.White)
+                    }
+                }
+            }
         }
     }
 }
 
-/** Rename and delete, for a playlist made in the app. */
 @Composable
-private fun OwnPlaylistMenu(vm: AppViewModel, playlist: Playlist, tint: Color) {
+private fun HeaderChip(icon: androidx.compose.ui.graphics.vector.ImageVector, text: String, on: Color, onClick: () -> Unit) {
+    Row(
+        Modifier.clip(RoundedCornerShape(16.dp)).background(Color.Black.copy(alpha = 0.18f)).clickable(onClick = onClick).padding(horizontal = 12.dp, vertical = 7.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(icon, null, tint = on, modifier = Modifier.size(17.dp))
+        Spacer(Modifier.width(5.dp))
+        Txt(text, Type.small, on)
+    }
+}
+
+/** Rename and delete, for a playlist that can be changed here. */
+@Composable
+private fun EditPlaylistMenu(vm: AppViewModel, playlist: Playlist, tint: Color) {
     var open by remember { mutableStateOf(false) }
-    var renaming by remember { mutableStateOf(false) }
-    var deleting by remember { mutableStateOf(false) }
     Box {
         IconTap(Icons.Rounded.Edit, tint, 22.dp, 44.dp, label = stringResource(R.string.playlist_rename)) { open = true }
         DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
+            DropdownMenuItem(text = { Text(stringResource(R.string.add_songs), style = Type.body) }, leadingIcon = { Icon(Icons.Rounded.Add, null) }, onClick = {
+                open = false
+                vm.nav.push(Route.AddSongsRoute(playlist.id))
+            })
             DropdownMenuItem(text = { Text(stringResource(R.string.playlist_rename), style = Type.body) }, leadingIcon = { Icon(Icons.Rounded.Edit, null) }, onClick = {
                 open = false
-                renaming = true
+                vm.renamingPlaylist = playlist
             })
             DropdownMenuItem(text = { Text(stringResource(R.string.playlist_delete), style = Type.body) }, leadingIcon = { Icon(Icons.Rounded.Delete, null) }, onClick = {
                 open = false
-                deleting = true
+                vm.deletingPlaylist = playlist
             })
         }
     }
-    if (renaming) {
-        PlaylistNameDialog(stringResource(R.string.playlist_rename), playlist.name, stringResource(R.string.done), { renaming = false }) { name ->
-            renaming = false
-            vm.renamePlaylist(playlist.id, name)
+}
+
+/**
+ * Picks songs to add to [playlist]: every song of the library, with a search, those already in it
+ * shown ticked. The button adds the picked ones at the end, in the order they were picked.
+ */
+@Composable
+private fun AddSongsScreen(vm: AppViewModel, library: Library, playlist: Playlist) {
+    val p = LocalPalette.current
+    var query by rememberSaveable { mutableStateOf("") }
+    val picked = remember { androidx.compose.runtime.mutableStateListOf<String>() }
+    val inside = remember(playlist) { playlist.trackIds.toHashSet() }
+    val songs = remember(library, query) { if (query.isBlank()) library.songs else Search.tracks(library, library.songs, query) }
+    Box(Modifier.fillMaxSize()) {
+        LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(top = statusTop() + 2.dp, bottom = LocalBottomSpace.current + 70.dp)) {
+            item { PageBar(vm, p.text, stringResource(R.string.add_to_title, playlist.name)) }
+            item(key = "filter") { ListFilter(query, { query = it }) }
+            items(songs, key = { it.id }, contentType = { "track" }) { track ->
+                val already = track.id in inside
+                Box(Modifier.graphicsLayer { alpha = if (already) 0.5f else 1f }) {
+                    TrackRow(track, false, false, selected = already || track.id in picked, onLongClick = {}) {
+                        if (!already) { if (track.id in picked) picked.remove(track.id) else picked.add(track.id) }
+                    }
+                }
+            }
+            if (songs.isEmpty()) item { Txt(stringResource(R.string.results_none), Type.body, p.muted, Modifier.padding(16.dp)) }
         }
-    }
-    if (deleting) {
-        ConfirmDialog(stringResource(R.string.playlist_delete), stringResource(R.string.playlist_delete_confirm, playlist.name), stringResource(R.string.delete), { deleting = false }) {
-            deleting = false
-            vm.deletePlaylist(playlist.id)
+        Box(
+            Modifier.align(Alignment.BottomCenter).padding(bottom = LocalBottomSpace.current + 10.dp)
+                .clip(RoundedCornerShape(24.dp))
+                .background(if (picked.isEmpty()) p.surfaceHigh else p.accent)
+                .clickable(enabled = picked.isNotEmpty()) {
+                    vm.addToPlaylist(playlist.id, picked.mapNotNull(library.byId::get))
+                    vm.nav.pop()
+                }
+                .padding(horizontal = 26.dp, vertical = 13.dp),
+        ) {
+            Txt(stringResource(R.string.add_count, picked.size), Type.bodyBold, if (picked.isEmpty()) p.muted else Color.White)
         }
     }
 }
 
 @Composable
-private fun ArtistScreen(vm: AppViewModel, artist: dev.kreal.muzon.data.Artist) {
+private fun ArtistScreen(vm: AppViewModel, library: Library, route: Route, artist: dev.kreal.muzon.data.Artist) {
     val conn = vm.connection
+    var filter by rememberSaveable { mutableStateOf("") }
+    val tracks = remember(artist, filter, library) { Search.filter(artist.tracks, filter) { library.searchText(it) } }
+    SelectionPool(vm, route, tracks)
     LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(top = statusTop() + 2.dp, bottom = LocalBottomSpace.current + 10.dp)) {
         item { PageBar(vm, LocalPalette.current.text) { CollectionMenuButton(vm, artist.tracks, LocalPalette.current.text) } }
         item { Txt(artist.name, Type.hero, modifier = Modifier.padding(horizontal = 14.dp), maxLines = 2) }
@@ -1109,16 +1297,18 @@ private fun ArtistScreen(vm: AppViewModel, artist: dev.kreal.muzon.data.Artist) 
             }
         }
         item { Spacer(Modifier.height(8.dp)) }
-        itemsIndexed(artist.tracks, key = { _, it -> it.id }, contentType = { _, _ -> "track" }) { i, track ->
-            TrackRow(track, conn.current?.id == track.id, conn.wantsToPlay, menu = { o, set -> TrackMenu(vm, track, LocalPalette.current.muted, open = o, setOpen = set) }) { conn.play(artist.tracks, i) }
+        if (artist.tracks.size > 8) item(key = "filter") { ListFilter(filter, { filter = it }) }
+        itemsIndexed(tracks, key = { _, it -> it.id }, contentType = { _, _ -> "track" }) { i, _ ->
+            PickableRow(vm, route, tracks, i)
         }
     }
 }
 
 @Composable
-private fun AlbumScreen(vm: AppViewModel, album: Album) {
+private fun AlbumScreen(vm: AppViewModel, route: Route, album: Album) {
     val p = LocalPalette.current
     val conn = vm.connection
+    SelectionPool(vm, route, album.tracks)
     LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(top = statusTop() + 2.dp, bottom = LocalBottomSpace.current + 10.dp)) {
         item { PageBar(vm, p.text) { CollectionMenuButton(vm, album.tracks, p.text) } }
         item {
@@ -1143,8 +1333,8 @@ private fun AlbumScreen(vm: AppViewModel, album: Album) {
             }
         }
         item { PlayButtons(p.accent, Modifier.padding(14.dp, 10.dp), { conn.play(album.tracks) }, { conn.play(album.tracks, shuffled = true) }) }
-        itemsIndexed(album.tracks, key = { _, it -> it.id }, contentType = { _, _ -> "track" }) { i, track ->
-            TrackRow(track, conn.current?.id == track.id, conn.wantsToPlay, menu = { o, set -> TrackMenu(vm, track, LocalPalette.current.muted, open = o, setOpen = set) }) { conn.play(album.tracks, i) }
+        itemsIndexed(album.tracks, key = { _, it -> it.id }, contentType = { _, _ -> "track" }) { i, _ ->
+            PickableRow(vm, route, album.tracks, i)
         }
     }
 }
@@ -1153,16 +1343,11 @@ private fun AlbumScreen(vm: AppViewModel, album: Album) {
 @Composable
 private fun SearchScreen(vm: AppViewModel, library: Library) {
     val p = LocalPalette.current
-    val conn = vm.connection
     var query by rememberSaveable { mutableStateOf("") }
     val focus = remember { FocusRequester() }
     LaunchedEffect(Unit) { focus.requestFocus() }
-    val q = query.trim().lowercase()
-    val songs = remember(q, library) {
-        if (q.isEmpty()) emptyList() else library.songs.filter { it.title.lowercase().contains(q) || it.artist.lowercase().contains(q) || it.album.lowercase().contains(q) }.take(200)
-    }
-    val artists = remember(q, library) { if (q.isEmpty()) emptyList() else library.artists.filter { it.name.lowercase().contains(q) } }
-    val albums = remember(q, library) { if (q.isEmpty()) emptyList() else library.albums.filter { it.title.lowercase().contains(q) }.take(30) }
+    val found = remember(query, library) { searchAll(library, query) }
+    SelectionPool(vm, Route.SearchRoute, found.songs)
     Column(Modifier.fillMaxSize().padding(top = statusTop())) {
         Row(Modifier.fillMaxWidth().height(48.dp), verticalAlignment = Alignment.CenterVertically) {
             IconTap(Icons.AutoMirrored.Rounded.KeyboardArrowLeft, p.text, 28.dp) { vm.nav.pop() }
@@ -1186,7 +1371,8 @@ private fun SearchScreen(vm: AppViewModel, library: Library) {
             }
         }
         LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = LocalBottomSpace.current + 10.dp)) {
-            items(artists, key = { "ar:${it.key}" }) { artist ->
+            items(found.playlists, key = { "pl:${it.id}" }) { Box(Modifier.padding(horizontal = 14.dp)) { PlaylistResult(vm, library, it) } }
+            items(found.artists, key = { "ar:${it.key}" }) { artist ->
                 Row(
                     Modifier.fillMaxWidth().combinedClickable(onClick = { vm.nav.push(Route.ArtistRoute(artist.key)) }, onLongClick = { vm.collectionMenu = artist.tracks }).padding(horizontal = 14.dp, vertical = 6.dp),
                     verticalAlignment = Alignment.CenterVertically,
@@ -1196,7 +1382,7 @@ private fun SearchScreen(vm: AppViewModel, library: Library) {
                     Txt(artist.name, Type.bodyBold)
                 }
             }
-            items(albums, key = { "al:${it.key}" }) { album ->
+            items(found.albums, key = { "al:${it.key}" }) { album ->
                 Row(
                     Modifier.fillMaxWidth().clickable { vm.nav.push(Route.AlbumRoute(album.key)) }.padding(horizontal = 14.dp, vertical = 6.dp),
                     verticalAlignment = Alignment.CenterVertically,
@@ -1209,10 +1395,10 @@ private fun SearchScreen(vm: AppViewModel, library: Library) {
                     }
                 }
             }
-            itemsIndexed(songs, key = { _, it -> "s:${it.id}" }) { i, track ->
-                TrackRow(track, conn.current?.id == track.id, conn.wantsToPlay, menu = { o, set -> TrackMenu(vm, track, LocalPalette.current.muted, open = o, setOpen = set) }) { conn.play(songs, i) }
+            itemsIndexed(found.songs, key = { _, it -> "s:${it.id}" }) { i, _ ->
+                PickableRow(vm, Route.SearchRoute, found.songs, i)
             }
-            if (q.isNotEmpty() && songs.isEmpty() && artists.isEmpty() && albums.isEmpty()) {
+            if (query.isNotBlank() && found.isEmpty) {
                 item { Txt(stringResource(R.string.results_none), Type.body, p.muted, Modifier.padding(16.dp)) }
             }
         }

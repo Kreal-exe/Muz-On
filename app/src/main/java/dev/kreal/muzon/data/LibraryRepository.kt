@@ -24,6 +24,9 @@ const val FAVOURITES_ID = "phone-favourites"
 /** Folder in the music folder for playlist files. */
 const val PLAYLIST_FOLDER = "Playlists"
 
+/** Written by tools/sync-library.sh beside Library.musicdb: what the Mac applied of the phone's changes. */
+const val APPLIED_FILE = "muzon-applied.txt"
+
 class LibraryRepository(private val context: Context, private val prefs: Prefs) {
     private val state = MutableStateFlow<Library?>(null)
     val library: StateFlow<Library?> = state
@@ -46,7 +49,7 @@ class LibraryRepository(private val context: Context, private val prefs: Prefs) 
         val uri: String get() = ContentUris.withAppendedId(MediaStore.Audio.Media.EXTERNAL_CONTENT_URI, id).toString()
     }
 
-    private class DbFiles(val db: Uri, val stamp: String, val order: Uri?)
+    private class DbFiles(val db: Uri, val stamp: String, val order: Uri?, val applied: Uri? = null, val xml: Boolean = false)
 
     /** The library as read, before the hearts set on this phone are laid over it. */
     private var base: Library? = null
@@ -76,7 +79,7 @@ class LibraryRepository(private val context: Context, private val prefs: Prefs) 
         tmp.renameTo(ownFile)
     }
 
-    /** The library as shown: hearts laid over, then the app's own playlists after those of Music. */
+    /** The library as shown: hearts and playlist changes laid over, then the app's own playlists. */
     private fun present(read: Library): Library {
         val shown = withoutMissing(withoutShort(withFavorites(read)))
         // Without a Mac library there is no Favourites playlist to follow; the phone keeps one of its
@@ -84,10 +87,62 @@ class LibraryRepository(private val context: Context, private val prefs: Prefs) 
         val favourites = if (shown.source == LibrarySource.MusicDatabase) emptyList() else listOf(
             Playlist(FAVOURITES_ID, context.getString(dev.kreal.muzon.R.string.favourites), shown.tracks.filter { it.favorite }.map { it.id }, hasExactOrder = true),
         )
-        val mine = ownPlaylists()
-        if (mine.isEmpty() && favourites.isEmpty()) return shown
-        return Library(shown.source, shown.tracks, favourites + shown.playlists + mine, shown.databaseTime, shown.failure).also { it.prepare() }
+        val toMac = shown.source == LibrarySource.MusicDatabase
+        val mine = ownPlaylists().map { if (toMac) it.copy(pending = true) else it }
+        val edits = playlistEdits()
+        val shadowed = madeOnMac.values.toHashSet()
+        val music = shown.playlists.filter { it.id !in shadowed }.mapNotNull { pl ->
+            val edit = edits[pl.id] ?: return@mapNotNull pl
+            if (edit.deleted) return@mapNotNull null
+            pl.copy(name = edit.name ?: pl.name, trackIds = edit.tracks ?: pl.trackIds, hasExactOrder = pl.hasExactOrder || edit.tracks != null, pending = true)
+        }
+        return Library(shown.source, shown.tracks, favourites + music + mine, shown.databaseTime, shown.failure, aliasMap()).also { it.prepare() }
     }
+
+    // ---- Changes to Music's own playlists, waiting for the Mac. Each entry is the whole new state
+    // of one playlist (name, songs in order, or deleted), so applying it twice does no harm.
+
+    private class Edit(val name: String?, val tracks: List<String>?, val deleted: Boolean)
+
+    private val editsFile get() = File(context.getExternalFilesDir(null) ?: context.filesDir, "playlist-edits.json")
+    private var edits: Map<String, Edit>? = null
+
+    private fun playlistEdits(): Map<String, Edit> = edits ?: runCatching {
+        val o = org.json.JSONObject(editsFile.readText())
+        o.keys().asSequence().associateWith { id ->
+            val e = o.getJSONObject(id)
+            Edit(
+                e.optString("name").takeIf { e.has("name") },
+                e.optJSONArray("tracks")?.let { a -> (0 until a.length()).map { a.getString(it) } },
+                e.optBoolean("deleted"),
+            )
+        }
+    }.getOrDefault(emptyMap()).also { edits = it }
+
+    private fun saveEdits(map: Map<String, Edit>) {
+        edits = map
+        val o = org.json.JSONObject()
+        map.forEach { (id, e) ->
+            o.put(id, org.json.JSONObject().apply {
+                e.name?.let { put("name", it) }
+                e.tracks?.let { put("tracks", org.json.JSONArray(it)) }
+                if (e.deleted) put("deleted", true)
+            })
+        }
+        val tmp = File(editsFile.path + ".tmp")
+        tmp.writeText(o.toString(1))
+        tmp.renameTo(editsFile)
+    }
+
+    /** A short fingerprint of a change, sent with it and echoed back by the Mac once applied. */
+    private fun rev(e: Edit): String = Integer.toHexString(listOf(e.name, e.tracks, e.deleted).hashCode())
+    private fun rev(pl: Playlist): String = Integer.toHexString(listOf(pl.name, pl.trackIds).hashCode())
+
+    /** Playlists made here whose Music copy exists but lags a later change: hidden until it catches up. */
+    private var madeOnMac: Map<String, String> = emptyMap()
+
+    /** Playlists made here that the Mac has turned into Music playlists: own id to Music's id. */
+    private fun aliasMap(): Map<String, String> = prefs.playlistAliases()
 
     /**
      * Leaves out tracks shorter than the setting asks, ringtones and voice notes in the music folder.
@@ -256,11 +311,48 @@ class LibraryRepository(private val context: Context, private val prefs: Prefs) 
         mutex.withLock { base?.let { state.value = present(it) } }
     }
 
+
     private suspend fun changeOwn(change: (List<Playlist>) -> List<Playlist>) = withContext(Dispatchers.IO) {
         mutex.withLock {
             saveOwn(change(ownPlaylists()))
-            base?.let { state.value = present(it) }
-            state.value?.let(::writePlaylistFiles)
+            publish()
+        }
+    }
+
+    /** Shows the change at once and writes it down for the Mac and the playlist files. */
+    private fun publish() {
+        base?.let { read ->
+            state.value = present(read)
+            writeChanges(read)
+        }
+        state.value?.let(::writePlaylistFiles)
+    }
+
+    /**
+     * Changes the songs or name of any editable playlist: one made here directly, one of Music as a
+     * change waiting for the Mac. [change] gets the playlist's full list of ids, hidden songs included.
+     */
+    private suspend fun edit(id: String, change: (Playlist) -> Playlist) = withContext(Dispatchers.IO) {
+        mutex.withLock {
+            val shown = state.value ?: return@withLock
+            val target = shown.playlist(id) ?: return@withLock
+            if (!target.editable) return@withLock
+            if (target.own) {
+                saveOwn(ownPlaylists().map { if (it.id == target.id) change(it).copy(trackIds = change(it).trackIds.distinct()) else it })
+            } else {
+                val next = change(target)
+                val original = base?.playlists?.firstOrNull { it.id == target.id }
+                val map = playlistEdits().toMutableMap()
+                // Back to what the Mac has: nothing to send.
+                if (original != null && original.name == next.name && original.trackIds == next.trackIds) {
+                    map.remove(target.id)
+                } else {
+                    // Music playlists may hold a song twice; that stays as it is.
+                    map[target.id] = Edit(next.name, next.trackIds, false)
+                }
+                saveEdits(map)
+            }
+            publish()
         }
     }
 
@@ -271,17 +363,55 @@ class LibraryRepository(private val context: Context, private val prefs: Prefs) 
     }
 
     /** Adds tracks at the end, leaving out those already in the playlist. */
-    suspend fun addToPlaylist(id: String, trackIds: List<String>) = changeOwn { list ->
-        list.map { pl -> if (pl.id == id) pl.copy(trackIds = pl.trackIds + trackIds.distinct().filter { it !in pl.trackIds }) else pl }
+    suspend fun addToPlaylist(id: String, trackIds: List<String>) = edit(id) { pl ->
+        pl.copy(trackIds = pl.trackIds + trackIds.distinct().filter { it !in pl.trackIds })
     }
 
-    suspend fun removeFromPlaylist(id: String, trackId: String) = changeOwn { list ->
-        list.map { pl -> if (pl.id == id) pl.copy(trackIds = pl.trackIds - trackId) else pl }
+    suspend fun removeFromPlaylist(id: String, trackIds: Collection<String>) {
+        val gone = trackIds.toHashSet()
+        edit(id) { pl -> pl.copy(trackIds = pl.trackIds.filter { it !in gone }) }
     }
 
-    suspend fun renamePlaylist(id: String, name: String) = changeOwn { list -> list.map { if (it.id == id) it.copy(name = name.trim()) else it } }
+    /**
+     * Puts the songs on screen in [visibleOrder]; songs not shown (hidden by a setting) keep their
+     * places among them.
+     */
+    suspend fun reorderPlaylist(id: String, visibleOrder: List<String>) = edit(id) { pl ->
+        val visible = visibleOrder.toHashSet()
+        val next = visibleOrder.iterator()
+        pl.copy(trackIds = pl.trackIds.map { if (it in visible && next.hasNext()) next.next() else it } + next.asSequence().toList())
+    }
 
-    suspend fun deletePlaylist(id: String) = changeOwn { list -> list.filter { it.id != id } }
+    /** Moves [ids] to the start or the end of the playlist, in their current order. */
+    suspend fun moveInPlaylist(id: String, ids: Collection<String>, toTop: Boolean) {
+        val set = ids.toHashSet()
+        edit(id) { pl ->
+            val moving = pl.trackIds.filter { it in set }
+            val rest = pl.trackIds.filter { it !in set }
+            pl.copy(trackIds = if (toTop) moving + rest else rest + moving)
+        }
+    }
+
+    suspend fun renamePlaylist(id: String, name: String) = edit(id) { it.copy(name = name.trim()) }
+
+    suspend fun deletePlaylist(id: String) = withContext(Dispatchers.IO) {
+        mutex.withLock {
+            val target = state.value?.playlist(id) ?: return@withLock
+            if (target.own) {
+                saveOwn(ownPlaylists().filter { it.id != target.id })
+            } else if (target.editable) {
+                saveEdits(playlistEdits() + (target.id to Edit(null, null, true)))
+            }
+            publish()
+        }
+    }
+
+    /** How many changes wait for the Mac: hearts, playlists made here, playlist changes. */
+    fun pendingForMac(): Int {
+        val read = base ?: return 0
+        if (read.source != LibrarySource.MusicDatabase) return 0
+        return prefs.favoriteOverrides().keys.count { read.byId.containsKey(it) } + ownPlaylists().size + playlistEdits().size
+    }
 
     /**
      * Sets or clears the heart of [track]. The change shows at once, smart playlists that depend on
@@ -291,18 +421,106 @@ class LibraryRepository(private val context: Context, private val prefs: Prefs) 
         mutex.withLock {
             val read = base ?: return@withLock
             prefs.setFavoriteOverride(track.id, favorite.takeIf { it != read.byId[track.id]?.favorite })
-            writeFavoriteChanges(read)
-            state.value = present(read)
-            state.value?.let(::writePlaylistFiles)
+            publish()
         }
     }
 
-    /** One line per pending change, "<persistent id> true|false", in the app's own folder. */
-    private fun writeFavoriteChanges(read: Library) {
+    /** Sets or clears the heart of several tracks at once. */
+    suspend fun setFavorites(tracks: Collection<Track>, favorite: Boolean) = withContext(Dispatchers.Default) {
+        mutex.withLock {
+            val read = base ?: return@withLock
+            tracks.forEach { t -> prefs.setFavoriteOverride(t.id, favorite.takeIf { it != read.byId[t.id]?.favorite }) }
+            publish()
+        }
+    }
+
+    /**
+     * Everything waiting for the Mac, in one file in the app's own folder, read by
+     * tools/sync-library.sh (tools/apply-changes.js applies it in Music):
+     *
+     *     {"version": 1,
+     *      "favourites": [{"id": "<persistent id>", "on": true}],
+     *      "playlists": [{"id": "own-…", "new": true, "name": "…", "tracks": ["<persistent id>", …]},
+     *                    {"id": "<persistent id>", "name": "…", "tracks": […]},
+     *                    {"id": "<persistent id>", "deleted": true}]}
+     *
+     * Songs that exist only on the phone (ids starting "ms") are left out: the Mac does not have them.
+     */
+    private fun writeChanges(read: Library) {
         val dir = context.getExternalFilesDir(null) ?: return
-        val lines = prefs.favoriteOverrides().filterKeys { read.byId.containsKey(it) }.map { (id, on) -> "$id $on" }
-        val file = File(dir, "favourites-changes.txt")
-        if (lines.isEmpty()) file.delete() else file.writeText(lines.joinToString("\n", postfix = "\n"))
+        File(dir, "favourites-changes.txt").delete() // the format before 1.0.1
+        val file = File(dir, "library-changes.json")
+        if (read.source != LibrarySource.MusicDatabase) {
+            file.delete()
+            return
+        }
+        fun onMac(ids: List<String>) = org.json.JSONArray(ids.filter { read.byId.containsKey(it) && !it.startsWith("ms") })
+        val favourites = org.json.JSONArray()
+        prefs.favoriteOverrides().filterKeys { read.byId.containsKey(it) }.forEach { (id, on) ->
+            favourites.put(org.json.JSONObject().put("id", id).put("on", on))
+        }
+        val playlists = org.json.JSONArray()
+        ownPlaylists().forEach { pl ->
+            playlists.put(org.json.JSONObject().put("id", pl.id).put("rev", rev(pl)).put("new", true).put("name", pl.name).put("tracks", onMac(pl.trackIds)))
+        }
+        playlistEdits().forEach { (id, e) ->
+            val o = org.json.JSONObject().put("id", id).put("rev", rev(e))
+            if (e.deleted) o.put("deleted", true) else {
+                e.name?.let { o.put("name", it) }
+                e.tracks?.let { o.put("tracks", onMac(it)) }
+            }
+            playlists.put(o)
+        }
+        if (favourites.length() == 0 && playlists.length() == 0) {
+            file.delete()
+            return
+        }
+        val json = org.json.JSONObject().put("version", 1).put("favourites", favourites).put("playlists", playlists)
+        val tmp = File(file.path + ".tmp")
+        tmp.writeText(json.toString(1))
+        tmp.renameTo(file)
+    }
+
+    /**
+     * After a sync: the Mac's list of what it applied ("<own id> <Music id>" for playlists it made,
+     * "<Music id>" for the ones it changed or deleted). A change is done once the database the Mac
+     * sent shows it.
+     */
+    private fun settleWithMac(read: Library, applied: List<String>) {
+        if (read.source != LibrarySource.MusicDatabase) return
+        val inDb = read.playlists.associateBy { it.id }
+        // "<own id> <Music id> <rev>" for a playlist made, "<Music id> <rev>" for one changed. The
+        // revision says which state of the change was applied: a change made since, or an old file
+        // left from an earlier sync, never settles a newer change.
+        val made = HashMap<String, Pair<String, String>>()
+        val done = HashMap<String, String>()
+        applied.map { it.trim().split(' ') }.forEach { parts ->
+            when (parts.size) {
+                3 -> made[parts[0]] = parts[1].uppercase() to parts[2]
+                2 -> done[parts[0].uppercase()] = parts[1]
+            }
+        }
+        // Playlists made here that Music now has, as they were sent: the Music one takes over. One
+        // changed since stays here, and the Mac changes the playlist it made at the next sync.
+        val own = ownPlaylists()
+        madeOnMac = made.filter { (ownId, v) -> own.any { it.id == ownId } && inDb.containsKey(v.first) }.mapValues { it.value.first }
+        val arrived = own.filter { pl -> made[pl.id]?.let { (pid, r) -> inDb.containsKey(pid) && r == rev(pl) } == true }
+        if (arrived.isNotEmpty()) {
+            prefs.setPlaylistAliases(prefs.playlistAliases() + arrived.associate { it.id to made.getValue(it.id).first })
+            arrived.forEach { pl -> prefs.sortOf(pl.id).let { (m, r) -> prefs.setSort(made.getValue(pl.id).first, m, r) } }
+            saveOwn(own - arrived.toSet())
+            madeOnMac = madeOnMac - arrived.map { it.id }.toSet()
+        }
+        val edits = playlistEdits()
+        val settled = edits.filter { (id, e) ->
+            val now = inDb[id]
+            when {
+                e.deleted -> now == null
+                now == null -> true // deleted on the Mac meanwhile: nothing left to change
+                else -> done[id] == rev(e)
+            }
+        }.keys
+        if (settled.isNotEmpty()) saveEdits(edits - settled)
     }
 
     private fun withFavorites(read: Library): Library {
@@ -348,7 +566,11 @@ class LibraryRepository(private val context: Context, private val prefs: Prefs) 
             // A heart the Mac already took over needs no override any more.
             prefs.favoriteOverrides().forEach { (id, on) -> if (library.byId[id]?.favorite == on) prefs.setFavoriteOverride(id, null) }
             restorePlaylistFiles(library)
-            writeFavoriteChanges(library)
+            val applied = db?.applied?.let { uri ->
+                runCatching { context.contentResolver.openInputStream(uri)!!.use { it.bufferedReader().readLines() } }.getOrNull()
+            }
+            settleWithMac(library, applied.orEmpty())
+            writeChanges(library)
             state.value = present(library)
             state.value?.let(::writePlaylistFiles)
             Log.i(TAG, "Library ready in ${System.currentTimeMillis() - started} ms")
@@ -389,8 +611,11 @@ class LibraryRepository(private val context: Context, private val prefs: Prefs) 
     }
 
     private fun fromDatabase(db: DbFiles, files: List<DeviceFile>): Library {
-        val bytes = context.contentResolver.openInputStream(db.db)!!.use { it.readBytes() }
-        val parsed = MusicDb.parse(bytes)
+        val parsed = if (db.xml) {
+            context.contentResolver.openInputStream(db.db)!!.use { ItunesXml.parse(it.buffered()) }
+        } else {
+            MusicDb.parse(context.contentResolver.openInputStream(db.db)!!.use { it.readBytes() })
+        }
         val resolver = PathResolver(files.map { PathResolver.Entry(it.relative, it.title, it) })
         val claimed = HashSet<Long>()
         val fromMac = parsed.tracks.map { track ->
@@ -403,8 +628,9 @@ class LibraryRepository(private val context: Context, private val prefs: Prefs) 
         // Songs on the phone the Mac library does not know yet (copied over since the last sync) are
         // in the library too, read from their own tags, until the next sync brings them in properly.
         // A second copy of a song the Mac already has (another album, another format) is not a new song.
-        val known = parsed.tracks.mapTo(HashSet()) { it.title.trim().lowercase() }
-        val extra = files.filter { it.id !in claimed }.map(::deviceTrack).filter { it.title.trim().lowercase() !in known }
+        fun same(t: Track) = Search.normalize(t.title) + "\u0000" + Search.normalize(t.shownArtist)
+        val known = parsed.tracks.mapTo(HashSet(), ::same)
+        val extra = files.filter { it.id !in claimed }.map(::deviceTrack).filter { same(it) !in known }
         if (extra.isNotEmpty()) Log.i(TAG, "${extra.size} songs on the phone are not in the Mac library")
         val tracks = fromMac + extra
         val order = db.order?.let { uri ->
@@ -630,13 +856,8 @@ class LibraryRepository(private val context: Context, private val prefs: Prefs) 
         prefs.libraryTree?.let(Uri::parse)?.let { tree ->
             runCatching {
                 val list = children(tree, DocumentsContract.getTreeDocumentId(tree))
-                list.firstOrNull { it.name == "Library.musicdb" }?.let { db ->
-                    val order = list.firstOrNull { it.name == "playlist-order.txt" }
-                    return DbFiles(
-                        DocumentsContract.buildDocumentUriUsingTree(tree, db.id),
-                        "${db.modified}/${db.size}/${order?.modified}/${order?.size}",
-                        order?.let { DocumentsContract.buildDocumentUriUsingTree(tree, it.id) },
-                    )
+                libraryFile(list)?.let { db ->
+                    return dbFiles(tree, list, db)
                 }
             }
         }
@@ -644,6 +865,8 @@ class LibraryRepository(private val context: Context, private val prefs: Prefs) 
         val folders = listOf(
             listOf("Music", "Music Library.musiclibrary"),
             listOf("Music Library.musiclibrary"),
+            listOf("iTunes"),
+            listOf("Music", "iTunes"),
             emptyList(),
         )
         for (path in folders) {
@@ -653,15 +876,28 @@ class LibraryRepository(private val context: Context, private val prefs: Prefs) 
             }
             val id = parent ?: continue
             val list = children(tree, id)
-            val db = list.firstOrNull { it.name == "Library.musicdb" } ?: continue
-            val order = list.firstOrNull { it.name == "playlist-order.txt" }
-            return DbFiles(
-                DocumentsContract.buildDocumentUriUsingTree(tree, db.id),
-                "${db.modified}/${db.size}/${order?.modified}/${order?.size}",
-                order?.let { DocumentsContract.buildDocumentUriUsingTree(tree, it.id) },
-            )
+            val db = libraryFile(list) ?: continue
+            return dbFiles(tree, list, db)
         }
         return null
+    }
+
+    /** Music's database on the Mac, else an iTunes XML library (Windows, or exported from Music). */
+    private fun libraryFile(list: List<Doc>): Doc? =
+        list.firstOrNull { it.name == "Library.musicdb" } ?: XML_NAMES.firstNotNullOfOrNull { n -> list.firstOrNull { it.name.equals(n, true) } }
+
+    private val XML_NAMES = listOf("iTunes Music Library.xml", "iTunes Library.xml", "Library.xml")
+
+    private fun dbFiles(tree: Uri, list: List<Doc>, db: Doc): DbFiles {
+        val order = list.firstOrNull { it.name == "playlist-order.txt" }
+        val applied = list.firstOrNull { it.name == APPLIED_FILE }
+        return DbFiles(
+            DocumentsContract.buildDocumentUriUsingTree(tree, db.id),
+            "${db.modified}/${db.size}/${order?.modified}/${order?.size}/${applied?.modified}",
+            order?.let { DocumentsContract.buildDocumentUriUsingTree(tree, it.id) },
+            applied?.let { DocumentsContract.buildDocumentUriUsingTree(tree, it.id) },
+            xml = db.name.endsWith(".xml", true),
+        )
     }
 
     private fun readM3uPlaylists(byName: PathResolver<String>): List<Playlist> {

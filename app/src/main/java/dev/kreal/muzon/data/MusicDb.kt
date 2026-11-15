@@ -165,7 +165,7 @@ object MusicDb {
             }
             // Library, Music, Downloaded, Genius and the like have a built-in kind; they are not the user's.
             if (!isMaster && builtInKind == 0) {
-                result += Playlist(b.persistentId(p + 30), name.trim(), ids, rules = rules)
+                result += Playlist(b.persistentId(p + 30), name.trim(), ids, rules = rules, mac = true)
             }
             p += total
         }

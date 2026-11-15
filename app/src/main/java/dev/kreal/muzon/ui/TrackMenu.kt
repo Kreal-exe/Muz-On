@@ -74,7 +74,7 @@ import java.io.File
 /**
  * The three dots of a track, with what the classic player offers that fits here: play next, add to
  * the queue, the album and the artist, send the file, its details. In the queue, "remove" replaces
- * "add". Nothing here changes a file or a playlist of Music; the app's own playlists can be edited.
+ * "add". Nothing here changes a file; playlists that can be edited offer "remove from playlist".
  */
 @Composable
 fun TrackMenu(
@@ -334,8 +334,8 @@ fun CollectionMenu(vm: AppViewModel, tracks: List<Track>, open: Boolean, playlis
         item(Icons.AutoMirrored.Rounded.QueueMusic, R.string.menu_play_next) { vm.connection.playNext(tracks) }
         item(Icons.AutoMirrored.Rounded.PlaylistAdd, R.string.menu_add_queue) { vm.connection.addToQueue(tracks) }
         item(Icons.AutoMirrored.Rounded.PlaylistAdd, R.string.menu_add_playlist) { vm.addToPlaylist = tracks }
-        // A playlist made in the app can be renamed and deleted from any of its menus.
-        if (playlist?.own == true) {
+        // A playlist that can be changed here can be renamed and deleted from any of its menus.
+        if (playlist?.editable == true) {
             item(Icons.Rounded.Edit, R.string.playlist_rename) { vm.renamingPlaylist = playlist }
             item(Icons.Rounded.Delete, R.string.playlist_delete) { vm.deletingPlaylist = playlist }
         }

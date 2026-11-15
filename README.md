@@ -41,7 +41,7 @@ It also does something no other Android player does. It reads the library of **M
 - smart playlists that keep following the rules you set on the Mac;
 - the same artists, albums and favourites.
 
-A heart set on the phone goes back to Music on the Mac. The iTunes library of an older computer can be rebuilt from the same data.
+Hearts and playlist changes made on the phone go back to Music on the Mac, or to iTunes on Windows: new playlists, songs added, removed or moved, names, deletions. The iTunes library of an older computer can be rebuilt from the same data.
 
 No account, no cloud, no ads, no analytics.
 
@@ -114,7 +114,9 @@ No account, no cloud, no ads, no analytics.
 - Home with search on top and tiles with covers: Playlists, Artists, Albums, Songs, Recent, Genres, History, Most played, Folders.
 - Sort any list by title, artist, album, year, date added, duration or genre, either way round.
 - An alphabet along lists sorted by name: touch a letter or slide along it.
-- Your own playlists: create them, add songs from any menu, rename and delete them.
+- Search that forgives: words in any order, no matter the case, accents, ё/е, brackets or the keyboard layout ("time session" finds "Time (Session Edit)"). A search field on every list.
+- Pick many songs with a long press: play, play next, queue, add to a playlist, heart them; in a playlist also remove, move to another playlist, to the top or the bottom.
+- Playlists you can change: make one and fill it with the + button, drag songs into order, rename and delete. Regular playlists of Music and iTunes can be changed too; smart ones follow their rules.
 - Long press or ⋮ on everything: play, play next, add to queue, add to playlist, go to album or artist, share the file, track details.
 
 ### Make it yours
@@ -128,21 +130,33 @@ No account, no cloud, no ads, no analytics.
 
 ## Your Mac library on the phone
 
-Music keeps its library in `~/Music/Music/Music Library.musiclibrary` on the Mac. With the phone connected over USB (adb), run:
+Music keeps its library in `~/Music/Music/Music Library.musiclibrary` on the Mac. With the phone connected over USB or Wi-Fi (adb), run:
 
 ```bash
 tools/sync-library.sh
 ```
 
-The script:
+The script works both ways:
 
-1. applies the hearts you set on the phone to Music on the Mac, which then updates its smart playlists itself;
+1. applies in Music what was changed on the phone (`library-changes.json`, by `tools/apply-changes.js`): hearts, which Music then follows in its smart playlists; playlists made on the phone; songs added, removed or moved, names changed and playlists deleted in regular playlists. Smart playlists are left to their rules. Running it twice never makes a playlist twice;
 2. writes `playlist-order.txt`, the order each playlist shows in Music (Music keeps that sort in macOS settings, not in the library);
-3. copies `Library.musicdb` and the order file to `Music/Music/Music Library.musiclibrary` on the phone.
+3. copies `Library.musicdb`, the order file and the list of applied changes to `Music/Music/Music Library.musiclibrary` on the phone, which then shows Music's playlists as they now are.
+
+Until a sync, changed playlists show "Waiting for sync with the computer", and Settings counts what is waiting.
 
 In Muz On, choose the `Music` folder once; Settings → Music library points it at another folder.
 
 A track is matched to its file on the phone by path, by name, or by its MP3/FLAC twin. The database format is undocumented and may change with an update of Music; if it cannot be read, Muz On falls back to the files on the phone.
+
+## iTunes on Windows
+
+Muz On also reads the XML library iTunes writes (`iTunes Music Library.xml`; turn on Edit → Preferences → Advanced → "Share iTunes Library XML with other applications"). With adb on the PATH and the phone connected, double-click `tools\windows\sync-library.cmd`, or run:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File tools\windows\sync-library.ps1
+```
+
+It applies the phone's playlist changes through the iTunes COM interface and copies the XML library to `Music/iTunes` on the phone. Hearts cannot go to iTunes on Windows: its COM interface has no "loved" property, so they stay on the phone until a Mac sync or until set by hand. A library exported from Music on the Mac (File → Library → Export Library) is read the same way.
 
 ## An old iTunes library
 
@@ -181,12 +195,14 @@ Launcher icons are drawn on a Mac by `tools/icon/make_icons.m`; translations liv
 | Path | What is there |
 |:--|:--|
 | `data/MusicDb.kt` | reads `Library.musicdb`: decryption, sections, tracks, playlists |
+| `data/ItunesXml.kt` | reads the XML library of iTunes on Windows or one exported from Music |
+| `data/Search.kt` | search by words in any order, ignoring case, accents and layout |
 | `data/SmartRules.kt` | evaluates smart playlist rules |
 | `data/PathResolver.kt` | matches library entries to files on the phone |
-| `data/LibraryRepository.kt` | builds the library: hearts, own playlists, filters |
+| `data/LibraryRepository.kt` | builds the library: hearts, own playlists, changes waiting for the computer, filters |
 | `playback/` | the Media3 service, queue and notification |
 | `ui/` | Compose screens, the player, themes |
-| `tools/` | library sync, playlist order, iTunes library, icons, translations |
+| `tools/` | library sync for the Mac (`sync-library.sh`, `apply-changes.js`) and Windows (`windows/`), playlist order, iTunes library, icons, translations |
 
 ## Licence
 

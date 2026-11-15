@@ -1,5 +1,22 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="select">选择</string>
+    <string name="sel_count">已选 %1$d 首</string>
+    <string name="sel_all">全选</string>
+    <string name="sel_none">取消选择</string>
+    <string name="add_songs">添加歌曲</string>
+    <string name="add_count">添加 %1$d 首</string>
+    <string name="add_to_title">添加到“%1$s”</string>
+    <string name="move_to_playlist">移到歌单</string>
+    <string name="move_top">移到顶部</string>
+    <string name="move_bottom">移到底部</string>
+    <string name="remove">移除</string>
+    <string name="filter_hint">在列表中搜索</string>
+    <string name="pending_sync">等待与电脑同步</string>
+    <string name="smart_note">智能歌单：由“音乐”中的规则决定歌曲</string>
+    <string name="s_sync">待同步到电脑的更改</string>
+    <string name="s_sync_none">与“音乐”或 iTunes 一致</string>
+    <string name="s_sync_pending">%1$d 项待同步。连接手机，在 Mac 上运行 tools/sync-library.sh，或在 Windows 上运行 tools\\windows\\sync-library.cmd</string>
     <string name="home">主页</string>
     <string name="place_playlists">播放列表</string>
     <string name="place_artists">艺人</string>

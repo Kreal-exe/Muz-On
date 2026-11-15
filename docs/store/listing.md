@@ -20,7 +20,7 @@ Screenshots, in upload order:
 
 The inner-screen shots can also go in the 7-inch and 10-inch tablet sections.
 
-Sources: `src/feature-graphic.html` (rendered with headless Chrome at 1024×500) and `src/icon-512.py` (draws the launcher bars on #E8542E; `python3 src/icon-512.py icon-512.png`).
+Sources: `src/feature-graphic.html` (rendered with headless Chrome at 1024×500) and `src/icon-512.py` (a flat fallback with the launcher bars on #7B4FF2; the real icon comes from tools/icon/make_icons.m; `python3 src/icon-512.py icon-512.png`).
 
 Note: the screenshots show real album covers of other artists (some carry an "AUDIOVK.com" watermark). Play can reject a listing for third-party artwork; if that happens, retake the screenshots with a library of royalty-free or self-made covers.
 

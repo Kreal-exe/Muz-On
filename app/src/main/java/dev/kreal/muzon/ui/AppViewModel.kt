@@ -111,10 +111,11 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     /** Tracks waiting for the "add to playlist" window. */
     var addToPlaylist by mutableStateOf<List<dev.kreal.muzon.data.Track>?>(null)
 
-    fun createPlaylist(name: String, tracks: List<dev.kreal.muzon.data.Track>, open: Boolean) {
+    fun createPlaylist(name: String, tracks: List<dev.kreal.muzon.data.Track>, open: Boolean, addSongs: Boolean = false) {
         viewModelScope.launch {
             val id = repository.createPlaylist(name, tracks.map { it.id })
             if (open) goTo(Route.PlaylistRoute(id))
+            if (addSongs) nav.push(Route.AddSongsRoute(id))
         }
     }
 
@@ -122,8 +123,26 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch { repository.addToPlaylist(id, tracks.map { it.id }) }
     }
 
-    fun removeFromPlaylist(id: String, trackId: String) {
-        viewModelScope.launch { repository.removeFromPlaylist(id, trackId) }
+    fun removeFromPlaylist(id: String, trackId: String) = removeFromPlaylist(id, listOf(trackId))
+
+    fun removeFromPlaylist(id: String, trackIds: Collection<String>) {
+        viewModelScope.launch { repository.removeFromPlaylist(id, trackIds) }
+    }
+
+    fun reorderPlaylist(id: String, order: List<String>) {
+        viewModelScope.launch { repository.reorderPlaylist(id, order) }
+    }
+
+    fun moveInPlaylist(id: String, trackIds: Collection<String>, toTop: Boolean) {
+        viewModelScope.launch { repository.moveInPlaylist(id, trackIds, toTop) }
+    }
+
+    /** Adds to [to] and takes out of [from]. */
+    fun moveToPlaylist(from: String, to: String, tracks: List<dev.kreal.muzon.data.Track>) {
+        viewModelScope.launch {
+            repository.addToPlaylist(to, tracks.map { it.id })
+            repository.removeFromPlaylist(from, tracks.map { it.id })
+        }
     }
 
     fun renamePlaylist(id: String, name: String) {
@@ -141,6 +160,18 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch { repository.setFavorite(track, !track.favorite) }
     }
 
+    fun setFavorites(tracks: Collection<dev.kreal.muzon.data.Track>, on: Boolean) {
+        viewModelScope.launch { repository.setFavorites(tracks, on) }
+    }
+
+    // ---- Picking several songs at once
+
+    /** The songs picked on one page; null when nothing is being picked. */
+    var selection by mutableStateOf<Selection?>(null)
+
+    /** "Move to playlist" waits for a target playlist while set. */
+    var movingFrom by mutableStateOf<String?>(null)
+
     fun applySkipSilence(on: Boolean) {
         prefs.skipSilence = on
         app.exoPlayer?.skipSilenceEnabled = on
@@ -149,5 +180,22 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     fun applySpeed(speed: Float) {
         prefs.speed = speed
         connection.setSpeed(speed)
+    }
+}
+
+/**
+ * Songs picked on the page [route]. [pool] is what the page shows, in its order, for "select all" and
+ * to keep the picked songs in that order; [playlist] is set on a playlist's own page.
+ */
+class Selection(val route: Route, val playlist: dev.kreal.muzon.data.Playlist?) {
+    val ids = androidx.compose.runtime.mutableStateListOf<String>()
+    var pool by mutableStateOf<List<dev.kreal.muzon.data.Track>>(emptyList())
+
+    fun toggle(id: String) { if (id in ids) ids.remove(id) else ids.add(id) }
+
+    /** The picked songs in the page's order. */
+    fun tracks(): List<dev.kreal.muzon.data.Track> {
+        val set = ids.toHashSet()
+        return pool.filter { it.id in set }
     }
 }

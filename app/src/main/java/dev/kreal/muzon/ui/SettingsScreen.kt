@@ -221,7 +221,7 @@ private fun ThemePicker(vm: AppViewModel) {
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
                 Box(
-                    Modifier.fillMaxWidth().height(52.dp).block(Blocks.Orange, theme, 12.dp),
+                    Modifier.fillMaxWidth().height(52.dp).block(Blocks.Brand, theme, 12.dp),
                     contentAlignment = Alignment.Center,
                 ) {
                     androidx.compose.runtime.CompositionLocalProvider(LocalAppTheme provides theme) {
@@ -383,6 +383,16 @@ fun SettingsScreen(vm: AppViewModel, library: Library) {
             }
         }
         item { Row_(stringResource(R.string.s_update), null, { vm.refreshLibrary(force = true) }) }
+        if (library.source == dev.kreal.muzon.data.LibrarySource.MusicDatabase) {
+            item {
+                // Hearts and playlist changes made here, until a sync takes them to Music or iTunes.
+                val waiting = remember(library) { vm.repository.pendingForMac() }
+                Row_(
+                    stringResource(R.string.s_sync),
+                    if (waiting == 0) stringResource(R.string.s_sync_none) else stringResource(R.string.s_sync_pending, waiting),
+                )
+            }
+        }
         item {
             // Favourites and own playlists live as M3U8 files in Music/Playlists once the folder may be written.
             val writable = remember(prefs.treeUri) { vm.repository.canWritePlaylists() }

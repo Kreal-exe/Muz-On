@@ -38,10 +38,23 @@ data class Playlist(
     val hasExactOrder: Boolean = false,
     /** The rules of a smart playlist, to follow changes made on this phone. */
     val rules: ByteArray? = null,
-    /** Made in this app, so it can be changed here; the Music playlists are read only. */
+    /** Made in this app and not yet in Music on the Mac. */
     val own: Boolean = false,
+    /** A playlist of Music on the Mac. */
+    val mac: Boolean = false,
+    /** Changes made on the phone are waiting for tools/sync-library.sh to reach the Mac. */
+    val pending: Boolean = false,
 ) {
-    override fun equals(other: Any?) = other is Playlist && other.id == id && other.trackIds == trackIds && other.name == name
+    val smart: Boolean get() = rules != null
+
+    /**
+     * Songs can be added, removed and reordered here: the app's own playlists, and the regular (not
+     * smart) playlists of Music, whose changes go to the Mac with the next sync. A smart playlist
+     * follows its rules only.
+     */
+    val editable: Boolean get() = own || (mac && !smart)
+
+    override fun equals(other: Any?) = other is Playlist && other.id == id && other.trackIds == trackIds && other.name == name && other.pending == pending
     override fun hashCode() = id.hashCode() * 31 + trackIds.hashCode()
 }
 
@@ -60,7 +73,11 @@ data class Library(
     val playlists: List<Playlist>,
     val databaseTime: Long = 0L,
     val failure: String? = null,
+    /** Ids of playlists made here that now live in Music, to the id Music gave them. */
+    val aliases: Map<String, String> = emptyMap(),
 ) {
+    fun playlist(id: String): Playlist? = playlists.firstOrNull { it.id == id } ?: aliases[id]?.let { a -> playlists.firstOrNull { it.id == a } }
+
     val byId: Map<String, Track> = tracks.associateBy { it.id }
     val songs: List<Track> by lazy { tracks.sortedWith(Sorting.byTitle) }
 
@@ -89,8 +106,9 @@ data class Library(
     val artistsByKey: Map<String, Artist> by lazy { artists.associateBy { it.key } }
 
     val genres: List<Pair<String, List<Track>>> by lazy {
-        tracks.filter { it.genre.isNotBlank() }.groupBy { it.genre.trim() }
-            .map { it.key to it.value.sortedWith(Sorting.byTitle) }
+        // "Hip-Hop", "hip-hop" and "Hip-hop" are one genre, under its most common spelling.
+        tracks.filter { it.genre.isNotBlank() }.groupBy { Search.normalize(it.genre) }
+            .map { (_, list) -> list.groupingBy { it.genre.trim() }.eachCount().maxBy { it.value }.key to list.sortedWith(Sorting.byTitle) }
             .sortedWith(compareBy(Sorting.collator) { it.first })
     }
 
@@ -130,6 +148,11 @@ data class Library(
 
     fun tracksOf(playlist: Playlist): List<Track> = playlistTracks[playlist.id].orEmpty()
 
+    /** Each track's title, artists, album and genre, prepared once for [Search]. */
+    private val searchTexts: Map<String, String> by lazy { tracks.associate { it.id to Search.haystack(it) } }
+
+    fun searchText(track: Track): String = searchTexts[track.id] ?: Search.haystack(track)
+
     /** Fills every derived list, so no screen sorts thousands of tracks while it opens. */
     fun prepare() {
         songs
@@ -140,6 +163,7 @@ data class Library(
         genres
         recentlyAdded
         playlistTracks
+        searchTexts
     }
 }
 

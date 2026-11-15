@@ -1,5 +1,22 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="select">Seç</string>
+    <string name="sel_count">%1$d seçildi</string>
+    <string name="sel_all">Tümünü seç</string>
+    <string name="sel_none">Seçimi kaldır</string>
+    <string name="add_songs">Şarkı ekle</string>
+    <string name="add_count">%1$d ekle</string>
+    <string name="add_to_title">“%1$s” listesine ekle</string>
+    <string name="move_to_playlist">Listeye taşı</string>
+    <string name="move_top">En üste</string>
+    <string name="move_bottom">En alta</string>
+    <string name="remove">Kaldır</string>
+    <string name="filter_hint">Listede ara</string>
+    <string name="pending_sync">Bilgisayarla eşitleme bekleniyor</string>
+    <string name="smart_note">Akıllı liste: şarkıları Müzik’teki kuralları seçer</string>
+    <string name="s_sync">Bilgisayar için değişiklikler</string>
+    <string name="s_sync_none">Her şey Müzik veya iTunes ile aynı</string>
+    <string name="s_sync_pending">%1$d bekliyor. Telefonu bağlayıp Mac’te tools/sync-library.sh veya Windows’ta tools\\windows\\sync-library.cmd çalıştırın</string>
     <string name="home">Ana sayfa</string>
     <string name="place_playlists">Çalma listeleri</string>
     <string name="place_artists">Sanatçılar</string>

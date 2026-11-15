@@ -119,22 +119,34 @@ fun ConfirmDialog(title: String, text: String, confirm: String, onDismiss: () ->
     }
 }
 
-/** Picks one of the app's playlists for [tracks], or makes a new one with them. */
+/**
+ * Picks a playlist for [tracks] (one made here, or a regular playlist of Music, which the next sync
+ * changes on the computer too), or makes a new one with them. With [moveFrom] the songs leave that
+ * playlist once added.
+ */
 @Composable
-fun AddToPlaylistDialog(vm: AppViewModel, tracks: List<Track>, onDismiss: () -> Unit) {
+fun AddToPlaylistDialog(vm: AppViewModel, tracks: List<Track>, moveFrom: String? = null, onDismiss: () -> Unit) {
     val p = LocalPalette.current
     val library = vm.repository.library.value
-    val mine = library?.playlists.orEmpty().filter { it.own }
+    val mine = library?.playlists.orEmpty().filter { it.editable && it.id != moveFrom }
+    fun put(id: String) {
+        if (moveFrom != null) vm.moveToPlaylist(moveFrom, id, tracks) else vm.addToPlaylist(id, tracks)
+    }
     var naming by remember { mutableStateOf(false) }
     if (naming) {
         PlaylistNameDialog(stringResource(R.string.playlist_new), "", stringResource(R.string.create), { naming = false }) { name ->
-            vm.createPlaylist(name, tracks, open = false)
+            if (moveFrom != null) {
+                vm.createPlaylist(name, tracks, open = false)
+                vm.removeFromPlaylist(moveFrom, tracks.map { it.id })
+            } else {
+                vm.createPlaylist(name, tracks, open = false)
+            }
             onDismiss()
         }
         return
     }
     SmallWindow(
-        stringResource(R.string.menu_add_playlist),
+        stringResource(if (moveFrom != null) R.string.move_to_playlist else R.string.menu_add_playlist),
         onDismiss,
         buttons = { WindowButton(stringResource(R.string.cancel), p.muted, onClick = onDismiss) },
     ) {
@@ -155,7 +167,7 @@ fun AddToPlaylistDialog(vm: AppViewModel, tracks: List<Track>, onDismiss: () -> 
                 val shown = remember(playlist) { library?.tracksOf(playlist).orEmpty() }
                 Row(
                     Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).clickable {
-                        vm.addToPlaylist(playlist.id, tracks)
+                        put(playlist.id)
                         onDismiss()
                     }.padding(vertical = 6.dp, horizontal = 4.dp),
                     verticalAlignment = Alignment.CenterVertically,
@@ -164,7 +176,11 @@ fun AddToPlaylistDialog(vm: AppViewModel, tracks: List<Track>, onDismiss: () -> 
                     Spacer(Modifier.width(12.dp))
                     Column(Modifier.weight(1f)) {
                         Txt(playlist.name, Type.bodyBold, p.text)
-                        Txt(pluralStringResource(R.plurals.songs, shown.size, shown.size), Type.small, p.muted)
+                        val already = tracks.count { it.id in playlist.trackIds }
+                        Txt(
+                            pluralStringResource(R.plurals.songs, shown.size, shown.size) + if (already == tracks.size && already > 0) " · ✓" else "",
+                            Type.small, p.muted,
+                        )
                     }
                 }
             }

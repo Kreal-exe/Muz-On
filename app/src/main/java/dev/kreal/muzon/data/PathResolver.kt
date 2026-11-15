@@ -73,6 +73,12 @@ class PathResolver<F>(files: List<Entry<F>>) {
             val named = candidate.name in wanted || candidate.title in wanted ||
                 (sameNumber && wanted.any { it.startsWith(candidate.name) || candidate.name.startsWith(it) })
             if (!named) continue
+            // Words in brackets the source does not have ("Live", "Remix", "Acoustic") make it another
+            // recording, never a copy of this one.
+            if ((candidate.nameWords - sourceWords).isNotEmpty() && !(sameNumber && (words(candidate.folder) intersect folderWords).isNotEmpty())) continue
+            // Same name elsewhere under the artist ("Intro" on every album): only with the same number
+            // or a word of the album folder in common.
+            if (!sameNumber && (words(candidate.folder) intersect folderWords).isEmpty()) continue
             var score = 1
             if (sameNumber) score += 4
             // Bracket text tells editions apart: "(Remix)" is another recording, "(with Future)" is not.

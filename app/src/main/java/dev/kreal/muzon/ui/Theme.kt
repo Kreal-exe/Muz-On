@@ -47,7 +47,7 @@ private val DarkPalette = Palette(
     text = Color(0xFFF7F7F9),
     muted = Color(0xFF9B9BA6),
     line = Color(0x1FFFFFFF),
-    accent = Color(0xFFFF5A1F),
+    accent = Color(0xFF8E66FF),
     isDark = true,
 )
 private val BlackPalette = DarkPalette.copy(background = Color.Black, surface = Color(0xFF131316), surfaceHigh = Color(0xFF1F1F24))
@@ -58,7 +58,7 @@ private val LightPalette = Palette(
     text = Color(0xFF15120E),
     muted = Color(0xFF6F6A62),
     line = Color(0x1F000000),
-    accent = Color(0xFFE94A10),
+    accent = Color(0xFF6638E0),
     isDark = false,
 )
 
@@ -78,6 +78,8 @@ object Type {
 
 /** Colours of the poster blocks, each with the text colour that reads on it. */
 object Blocks {
+    /** The violet of the app icon, the app's own colour. */
+    val Brand = Color(0xFF7B4FF2)
     val Orange = Color(0xFFFF5A1F)
     val Violet = Color(0xFF5B2EFF)
     val Lime = Color(0xFFC6F135)
@@ -85,13 +87,13 @@ object Blocks {
     val Yellow = Color(0xFFFFC400)
     val Teal = Color(0xFF00BFA6)
 
-    private val cycle = listOf(Orange, Violet, Lime, Pink, Teal, Yellow)
+    private val cycle = listOf(Brand, Orange, Lime, Pink, Teal, Yellow)
     fun forIndex(i: Int) = cycle[i % cycle.size]
     fun on(color: Color) = if (color.luminance() > 0.42f) Color(0xFF14130F) else Color.White
 
     fun forPlace(place: Place) = when (place) {
-        Place.Playlists -> Orange
-        Place.Artists -> Violet
+        Place.Playlists -> Brand
+        Place.Artists -> Orange
         Place.Albums -> Lime
         Place.Songs -> Pink
         Place.Recent -> Yellow
@@ -102,12 +104,13 @@ object Blocks {
     }
 
     /** Accent colours offered in the settings; the first is the default. */
-    // New colours go at the end: the setting stores the position. 0xFFFB8C00 is the orange of the
+    // New colours go at the end: the setting stores the position. The first is the icon's violet;
+    // the orange that was the default before 1.0.1 is at the end. 0xFFFB8C00 is the orange of the
     // classic player as it was set up on this phone, 0xFF607D8B its blue-grey.
     val accents = listOf(
-        Color(0xFFFF5A1F), Violet, Pink, Teal, Color(0xFF2F80FF), Color(0xFF9BC21A), Yellow,
+        Brand, Violet, Pink, Teal, Color(0xFF2F80FF), Color(0xFF9BC21A), Yellow,
         Color(0xFFFB8C00), Color(0xFF607D8B), Color(0xFFE53935), Color(0xFF3F51B5), Color(0xFF43A047),
-        Color(0xFF00B8D4), Color(0xFFD500F9),
+        Color(0xFF00B8D4), Color(0xFFD500F9), Orange,
     )
 }
 

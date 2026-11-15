@@ -1,5 +1,22 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="select">Selecteren</string>
+    <string name="sel_count">%1$d geselecteerd</string>
+    <string name="sel_all">Alles selecteren</string>
+    <string name="sel_none">Wissen</string>
+    <string name="add_songs">Nummers toevoegen</string>
+    <string name="add_count">%1$d toevoegen</string>
+    <string name="add_to_title">Toevoegen aan ‘%1$s’</string>
+    <string name="move_to_playlist">Naar lijst verplaatsen</string>
+    <string name="move_top">Naar boven</string>
+    <string name="move_bottom">Naar onder</string>
+    <string name="remove">Verwijderen</string>
+    <string name="filter_hint">Zoeken in lijst</string>
+    <string name="pending_sync">Wacht op synchronisatie met computer</string>
+    <string name="smart_note">Slimme lijst: de regels in Muziek bepalen de nummers</string>
+    <string name="s_sync">Wijzigingen voor de computer</string>
+    <string name="s_sync_none">Alles komt overeen met Muziek of iTunes</string>
+    <string name="s_sync_pending">%1$d wachtend. Verbind de telefoon en start tools/sync-library.sh op de Mac of tools\\windows\\sync-library.cmd op Windows</string>
     <string name="home">Start</string>
     <string name="place_playlists">Afspeellijsten</string>
     <string name="place_artists">Artiesten</string>

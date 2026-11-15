@@ -21,6 +21,8 @@ import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.awaitEachGesture
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.material.icons.rounded.Check
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.gestures.animateScrollBy
@@ -161,18 +163,46 @@ fun TrackRow(
     wantsToPlay: Boolean,
     number: Int? = null,
     menu: (@Composable (open: Boolean, setOpen: (Boolean) -> Unit) -> Unit)? = null,
+    /** Picking several songs: null when not picking, else whether this one is picked. */
+    selected: Boolean? = null,
+    /** A long press; without it a long press opens the menu. */
+    onLongClick: (() -> Unit)? = null,
+    /** Shown at the end of the row, a drag handle for instance. */
+    trailing: (@Composable () -> Unit)? = null,
     onClick: () -> Unit,
 ) {
     var menuOpen by remember { androidx.compose.runtime.mutableStateOf(false) }
     val p = LocalPalette.current
     val available = track.uri != null
+    val picking = selected != null
     Row(
         Modifier
             .fillMaxWidth()
-            .combinedClickable(enabled = available || menu != null, onClick = { if (available) onClick() }, onLongClick = { if (menu != null) menuOpen = true })
+            .then(if (selected == true) Modifier.background(p.accent.copy(alpha = 0.14f)) else Modifier)
+            .combinedClickable(
+                enabled = picking || available || menu != null || onLongClick != null,
+                onClick = { if (picking || available) onClick() },
+                onLongClick = {
+                    when {
+                        onLongClick != null -> onLongClick()
+                        menu != null && !picking -> menuOpen = true
+                    }
+                },
+            )
             .padding(horizontal = 14.dp, vertical = 5.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
+        if (picking) {
+            Box(
+                Modifier.size(24.dp).clip(CircleShape)
+                    .background(if (selected == true) p.accent else Color.Transparent)
+                    .border(2.dp, if (selected == true) p.accent else p.muted, CircleShape),
+                contentAlignment = Alignment.Center,
+            ) {
+                if (selected == true) Icon(androidx.compose.material.icons.Icons.Rounded.Check, null, tint = Color.White, modifier = Modifier.size(16.dp))
+            }
+            Spacer(Modifier.width(10.dp))
+        }
         if (number != null) {
             Txt(number.toString(), Type.small, p.muted, Modifier.width(26.dp))
         } else {
@@ -188,7 +218,9 @@ fun TrackRow(
             Spacer(Modifier.width(8.dp))
         }
         Txt(formatTime(track.durationMs), Type.tiny, p.muted)
-        if (menu != null) menu(menuOpen) { menuOpen = it }
+        if (trailing != null) trailing()
+        else if (menu != null && !picking) menu(menuOpen) { menuOpen = it }
+        else if (picking) Spacer(Modifier.width(8.dp))
     }
 }
 
@@ -345,7 +377,11 @@ fun lettersOf(names: List<String>): List<Pair<Char, Int>> {
     names.forEachIndexed { i, n ->
         // A title that starts with a sign or a digit ("$HRIMP", "'70s", "#1") sorts before the letters,
         // so it belongs to '#', not to the letter after the sign: that letter would appear out of order.
-        val first = n.trim().firstOrNull()?.uppercaseChar()
+        // The list is sorted ignoring accents, so É sits among the E names and Ё among the Е ones:
+        // the rail shows the base letter, not a letter of its own in the middle of another.
+        val first = n.trim().firstOrNull()?.let { ch ->
+            java.text.Normalizer.normalize(ch.toString(), java.text.Normalizer.Form.NFD).first().uppercaseChar()
+        }
         val c = if (first == null || !first.isLetter()) '#' else first
         if (c != last) {
             if (out.none { it.first == c }) out += c to i

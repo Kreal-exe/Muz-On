@@ -13,8 +13,8 @@ android {
         applicationId = "dev.kreal.muzon"
         minSdk = 30
         targetSdk = 36
-        versionCode = 1
-        versionName = "1.0.0"
+        versionCode = 2
+        versionName = "1.0.1"
     }
 
     signingConfigs {
@@ -29,6 +29,20 @@ android {
     }
 
     buildTypes {
+        // Installs beside the release app, so trying a build never touches the library set up there.
+        debug {
+            applicationIdSuffix = ".debug"
+            versionNameSuffix = "-debug"
+        }
+        // The release build, signed with the debug key and installed as the debug app: to try how fast
+        // it really is (a debug build of Compose is several times slower) without the release key.
+        create("preview") {
+            initWith(getByName("release"))
+            applicationIdSuffix = ".debug"
+            versionNameSuffix = "-preview"
+            signingConfig = signingConfigs.getByName("debug")
+            matchingFallbacks += "release"
+        }
         release {
             isMinifyEnabled = true
             isShrinkResources = true
@@ -77,6 +91,7 @@ dependencies {
     implementation("androidx.palette:palette-ktx:1.1.0")
     implementation("androidx.profileinstaller:profileinstaller:1.4.1")
     implementation("io.coil-kt:coil-compose:2.7.0")
+    implementation("sh.calvin.reorderable:reorderable:2.4.3")
     implementation("com.github.chr56:jaudiotagger:0.1.0")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.10.2")
     implementation("com.google.guava:guava:33.4.8-android")

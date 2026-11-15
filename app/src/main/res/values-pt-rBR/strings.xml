@@ -1,5 +1,22 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="select">Selecionar</string>
+    <string name="sel_count">%1$d selecionadas</string>
+    <string name="sel_all">Selecionar tudo</string>
+    <string name="sel_none">Limpar seleção</string>
+    <string name="add_songs">Adicionar músicas</string>
+    <string name="add_count">Adicionar %1$d</string>
+    <string name="add_to_title">Adicionar a “%1$s”</string>
+    <string name="move_to_playlist">Mover para playlist</string>
+    <string name="move_top">Para o início</string>
+    <string name="move_bottom">Para o fim</string>
+    <string name="remove">Remover</string>
+    <string name="filter_hint">Buscar na lista</string>
+    <string name="pending_sync">Aguardando sincronizar com o computador</string>
+    <string name="smart_note">Playlist inteligente: as regras no Música escolhem as músicas</string>
+    <string name="s_sync">Alterações para o computador</string>
+    <string name="s_sync_none">Tudo igual ao Música ou iTunes</string>
+    <string name="s_sync_pending">%1$d pendentes. Conecte o celular e rode tools/sync-library.sh no Mac ou tools\\windows\\sync-library.cmd no Windows</string>
     <string name="home">Início</string>
     <string name="place_playlists">Playlists</string>
     <string name="place_artists">Artistas</string>

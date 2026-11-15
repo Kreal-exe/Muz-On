@@ -1,6 +1,23 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name" translatable="false">Muz On</string>
+    <string name="select">Select</string>
+    <string name="sel_count">%1$d selected</string>
+    <string name="sel_all">Select all</string>
+    <string name="sel_none">Clear</string>
+    <string name="add_songs">Add songs</string>
+    <string name="add_count">Add %1$d</string>
+    <string name="add_to_title">Add to “%1$s”</string>
+    <string name="move_to_playlist">Move to playlist</string>
+    <string name="move_top">Move to top</string>
+    <string name="move_bottom">Move to bottom</string>
+    <string name="remove">Remove</string>
+    <string name="filter_hint">Search in this list</string>
+    <string name="pending_sync">Waiting for sync with the computer</string>
+    <string name="smart_note">Smart playlist: its rules in Music decide the songs</string>
+    <string name="s_sync">Changes for the computer</string>
+    <string name="s_sync_none">Everything is in step with Music or iTunes</string>
+    <string name="s_sync_pending">%1$d waiting. Connect the phone and run tools/sync-library.sh on the Mac, or tools\\windows\\sync-library.cmd on Windows</string>
     <string name="home">Home</string>
     <string name="place_playlists">Playlists</string>
     <string name="place_artists">Artists</string>
@@ -125,7 +142,7 @@
     <string name="playlist_rename">Rename</string>
     <string name="playlist_delete">Delete playlist</string>
     <string name="playlist_delete_confirm">Delete “%1$s”? The songs stay in your library.</string>
-    <string name="playlist_empty">Nothing here yet. Add songs with ⋮ → Add to playlist.</string>
+    <string name="playlist_empty">Nothing here yet. Tap Add songs, or add them from any ⋮ menu.</string>
     <string name="menu_add_playlist">Add to playlist</string>
     <string name="menu_remove_playlist">Remove from playlist</string>
     <string name="sort_own">Order added</string>

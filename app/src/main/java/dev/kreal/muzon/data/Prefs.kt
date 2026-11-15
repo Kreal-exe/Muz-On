@@ -169,6 +169,16 @@ class Prefs(context: Context) {
     fun writtenPlaylistFiles(): Set<String> = sp.getStringSet("playlistFiles", emptySet()).orEmpty()
     fun setWrittenPlaylistFiles(names: Set<String>) { sp.edit().putStringSet("playlistFiles", names).apply() }
 
+    /** Playlists made on the phone that the Mac has made in Music: own id to Music's persistent id. */
+    fun playlistAliases(): Map<String, String> =
+        sp.getStringSet("playlistAliases", emptySet()).orEmpty().mapNotNull { e ->
+            e.split(' ').takeIf { it.size == 2 }?.let { it[0] to it[1] }
+        }.toMap()
+
+    fun setPlaylistAliases(map: Map<String, String>) {
+        sp.edit().putStringSet("playlistAliases", map.map { (k, v) -> "$k $v" }.toSet()).apply()
+    }
+
     var restoredPlaylists: Boolean
         get() = sp.getBoolean("restoredPlaylists", false)
         set(v) { sp.edit().putBoolean("restoredPlaylists", v).apply() }
@@ -236,7 +246,7 @@ class Prefs(context: Context) {
     var seekStepSeconds: Int get() = seekStepState.value; set(v) { seekStepState.value = v; sp.edit().putInt("seekStep", v).apply() }
 
     private val accentState = mutableStateOf(sp.getInt("accent", 0))
-    /** Index into the accent colours; 0 is the default orange. */
+    /** Index into the accent colours; 0 is the default, the violet of the icon. */
     var accent: Int get() = accentState.value; set(v) { accentState.value = v; sp.edit().putInt("accent", v).apply() }
 
     fun saveModes(shuffle: Boolean, repeat: Int) {

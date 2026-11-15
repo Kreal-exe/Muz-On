@@ -1,5 +1,22 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="select">Вибрати</string>
+    <string name="sel_count">Вибрано: %1$d</string>
+    <string name="sel_all">Вибрати всі</string>
+    <string name="sel_none">Зняти вибір</string>
+    <string name="add_songs">Додати пісні</string>
+    <string name="add_count">Додати %1$d</string>
+    <string name="add_to_title">Додати до «%1$s»</string>
+    <string name="move_to_playlist">Перенести до плейлиста</string>
+    <string name="move_top">На початок</string>
+    <string name="move_bottom">В кінець</string>
+    <string name="remove">Прибрати</string>
+    <string name="filter_hint">Пошук у списку</string>
+    <string name="pending_sync">Чекає синхронізації з комп’ютером</string>
+    <string name="smart_note">Смарт-плейлист: пісні добирають його правила в Музиці</string>
+    <string name="s_sync">Зміни для комп’ютера</string>
+    <string name="s_sync_none">Усе збігається з Музикою чи iTunes</string>
+    <string name="s_sync_pending">Чекають: %1$d. Підключіть телефон і запустіть tools/sync-library.sh на Mac або tools\\windows\\sync-library.cmd у Windows</string>
     <string name="home">Головна</string>
     <string name="place_playlists">Плейлисти</string>
     <string name="place_artists">Виконавці</string>

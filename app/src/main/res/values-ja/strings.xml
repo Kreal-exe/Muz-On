@@ -1,5 +1,22 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="select">選択</string>
+    <string name="sel_count">%1$d曲を選択</string>
+    <string name="sel_all">すべて選択</string>
+    <string name="sel_none">選択解除</string>
+    <string name="add_songs">曲を追加</string>
+    <string name="add_count">%1$d曲を追加</string>
+    <string name="add_to_title">「%1$s」に追加</string>
+    <string name="move_to_playlist">プレイリストへ移動</string>
+    <string name="move_top">先頭へ</string>
+    <string name="move_bottom">末尾へ</string>
+    <string name="remove">削除</string>
+    <string name="filter_hint">リスト内を検索</string>
+    <string name="pending_sync">コンピュータとの同期待ち</string>
+    <string name="smart_note">スマートプレイリスト：ミュージックのルールで曲が決まります</string>
+    <string name="s_sync">コンピュータへの変更</string>
+    <string name="s_sync_none">ミュージックまたはiTunesと一致しています</string>
+    <string name="s_sync_pending">%1$d件待機中。電話を接続し、Macで tools/sync-library.sh、Windowsで tools\\windows\\sync-library.cmd を実行</string>
     <string name="home">ホーム</string>
     <string name="place_playlists">プレイリスト</string>
     <string name="place_artists">アーティスト</string>
