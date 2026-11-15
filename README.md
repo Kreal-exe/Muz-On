@@ -174,6 +174,8 @@ JDK 25 runs Gradle; `compileSdk` is 37, `targetSdk` 36, `minSdk` 30 (Android 11)
 ./gradlew :app:assembleRelease
 ```
 
+Releases build themselves: pushing a tag `v*` makes GitHub Actions (`.github/workflows/release.yml`) build the APK, sign it with the Muz On key kept in the repository's secrets, and put it on that tag's release. "Run workflow" builds any tag again.
+
 Release signing reads `release.keystoreFile`, `release.keystorePassword`, `release.keyAlias` and `release.keyPassword` from `~/.gradle/gradle.properties`.
 
 A check against a real library runs as a unit test. Point `MUZON_CHECK` at a folder with a copy of `Library.musicdb`, the `music-order.txt` written by `tools/playlist-order.applescript`, and a `phone-files.txt` list of the phone's music files:
