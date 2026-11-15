@@ -224,7 +224,8 @@ private fun CompactShell(vm: AppViewModel, library: Library) {
                     .background(p.background),
             )
         }
-        CompactPlayer(vm, tabsHeight)
+        // While songs are picked the mini player sits above the taller selection bar.
+        CompactPlayer(vm, tabsHeight + if (picking) SELECTION_EXTRA else 0.dp)
         if (picking) {
             SelectionBar(
                 vm,

@@ -188,7 +188,11 @@ A check against a real library runs as a unit test. Point `MUZON_CHECK` at a fol
 MUZON_CHECK=/path/to/check ./gradlew :app:testDebugUnitTest
 ```
 
-Launcher icons are drawn on a Mac by `tools/icon/make_icons.m`; translations live in `tools/gen_strings.py`.
+A project inside a folder iCloud syncs (such as `~/Documents`) should build elsewhere: iCloud copies files it sees changing and the build then finds every class twice. Set `muzon.buildDir=/some/folder` in `~/.gradle/gradle.properties`.
+
+`./gradlew :app:assembleDebug` and `:app:assemblePreview` (the optimized build, signed with the debug key) install as `dev.kreal.muzon.debug`, beside the release app, with their own playlist folder.
+
+Launcher icons are drawn on a Mac by `tools/icon/make_icons.m`; translations live in `tools/gen_strings.py`; the demo animations are screen recordings laid into a phone by `tools/demo/make.sh`.
 
 ## Project layout
 

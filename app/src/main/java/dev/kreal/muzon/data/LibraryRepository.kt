@@ -21,8 +21,11 @@ private const val TAG = "Library"
 /** The phone's own Favourites playlist, shown when there is no Mac library. */
 const val FAVOURITES_ID = "phone-favourites"
 
-/** Folder in the music folder for playlist files. */
-const val PLAYLIST_FOLDER = "Playlists"
+/**
+ * Folder in the music folder for playlist files. A debug or preview build, installed beside the
+ * release app, keeps its own, so its trial playlists never turn up in the real one.
+ */
+val PLAYLIST_FOLDER = if (dev.kreal.muzon.BuildConfig.APPLICATION_ID.endsWith(".debug")) "Playlists (debug)" else "Playlists"
 
 /** Written by tools/sync-library.sh beside Library.musicdb: what the Mac applied of the phone's changes. */
 const val APPLIED_FILE = "muzon-applied.txt"
